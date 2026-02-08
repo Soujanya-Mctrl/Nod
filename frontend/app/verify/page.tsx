@@ -122,111 +122,39 @@ export default function VerifyPage() {
                     </div>
                 </div>
 
-                {/* Verification Section */}
+                {/* Registry Instructions */}
                 <Card className="overflow-hidden border-2 border-[var(--border)]">
-                    <CardContent className="p-6 space-y-6">
-                        <div className="flex flex-col md:flex-row gap-3">
-                            <Input
-                                placeholder="Paste sealed hash here (e.g., 0x...)"
-                                value={verifyHash}
-                                onChange={(e) => setVerifyHash(e.target.value)}
-                                className="font-mono text-sm h-12"
-                            />
-                            <Button
-                                size="lg"
-                                onClick={() => performVerification(verifyHash)}
-                                disabled={!verifyHash.trim() || isVerifying}
-                                className="h-12 px-8"
-                            >
-                                {isVerifying ? (
-                                    <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                        className="w-5 h-5 border-2 border-[var(--background)]/30 border-t-[var(--background)] rounded-full"
-                                    />
-                                ) : "Verify Nod"}
-                            </Button>
+                    <CardContent className="p-6">
+                        <div className="rounded-xl p-6 bg-[var(--accent)]/30">
+                            <div className="flex items-start gap-4">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                    <HugeiconsIcon icon={Search01Icon} className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div className="space-y-3 flex-1">
+                                    <h3 className="text-base font-semibold text-[var(--foreground)]">
+                                        How to Use the Registry
+                                    </h3>
+                                    <ul className="text-sm text-[var(--foreground-muted)] space-y-2">
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-blue-600 mt-0.5">•</span>
+                                            <span><strong>Search by hash, username, or ID</strong> using the search box below</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-blue-600 mt-0.5">•</span>
+                                            <span><strong>Filter by status</strong> (All, Awaiting, Nodded, Declined) to find specific agreements</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-blue-600 mt-0.5">•</span>
+                                            <span><strong>Click usernames</strong> to view agreement details (hash verification required for non-participants)</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-blue-600 mt-0.5">•</span>
+                                            <span><strong>Copy transaction hashes</strong> by hovering over them for easy sharing</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
-
-                        {/* Verification Result */}
-                        <AnimatePresence mode="wait">
-                            {verificationResult && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className={cn(
-                                        "rounded-xl p-6 border",
-                                        verificationResult.found
-                                            ? "bg-emerald-50/50 border-emerald-100"
-                                            : "bg-red-50/50 border-red-100"
-                                    )}
-                                >
-                                    <div className="flex items-start gap-4">
-                                        <div className={cn(
-                                            "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-                                            verificationResult.found ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600"
-                                        )}>
-                                            <HugeiconsIcon
-                                                icon={verificationResult.found ? CheckmarkCircle01Icon : CancelCircleIcon}
-                                                className="w-6 h-6"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-4 flex-1">
-                                            <div>
-                                                <h3 className={cn(
-                                                    "text-lg font-semibold",
-                                                    verificationResult.found ? "text-emerald-900" : "text-red-900"
-                                                )}>
-                                                    {verificationResult.found
-                                                        ? (verificationResult.method === 'content' ? "Valid Content Hash Found" : "Valid Transaction Hash Found")
-                                                        : "Invalid Hash"
-                                                    }
-                                                </h3>
-                                                <p className={cn(
-                                                    "text-sm",
-                                                    verificationResult.found ? "text-emerald-700" : "text-red-700"
-                                                )}>
-                                                    {verificationResult.found
-                                                        ? `The ${verificationResult.method === 'content' ? 'sealed content hash' : 'transaction hash'} matches a recorded agreement on the registry.`
-                                                        : "No record found for this hash. Please check if it was copied correctly."}
-                                                </p>
-                                            </div>
-
-                                            {verificationResult.found && verificationResult.nod && (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                                    <div className="bg-white/60 p-3 rounded-lg space-y-1">
-                                                        <span className="text-xs text-emerald-700 font-medium">Status</span>
-                                                        <div className="flex">
-                                                            <StatusBadge status={verificationResult.nod.status} />
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-white/60 p-3 rounded-lg space-y-1">
-                                                        <span className="text-xs text-emerald-700 font-medium">Participants</span>
-                                                        <p className="text-sm font-medium text-emerald-900">
-                                                            @{verificationResult.nod.creator} ↔ @{verificationResult.nod.counterparty}
-                                                        </p>
-                                                    </div>
-                                                    <div className="bg-white/60 p-3 rounded-lg space-y-1">
-                                                        <span className="text-xs text-emerald-700 font-medium">Recorded</span>
-                                                        <p className="text-sm font-medium text-emerald-900">
-                                                            {verificationResult.nod.createdAt} at {verificationResult.nod.timestamp}
-                                                        </p>
-                                                    </div>
-                                                    <div className="bg-white/60 p-3 rounded-lg space-y-1">
-                                                        <span className="text-xs text-emerald-700 font-medium">Nod ID</span>
-                                                        <p className="text-sm font-medium text-emerald-900">
-                                                            #{verificationResult.nod.id}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
                     </CardContent>
                 </Card>
 
@@ -285,6 +213,7 @@ export default function VerifyPage() {
                                         <th className="text-left text-xs font-medium text-[var(--foreground-muted)] uppercase tracking-wider px-4 py-3">To</th>
                                         <th className="text-left text-xs font-medium text-[var(--foreground-muted)] uppercase tracking-wider px-4 py-3">Status</th>
                                         <th className="text-left text-xs font-medium text-[var(--foreground-muted)] uppercase tracking-wider px-4 py-3">Date</th>
+                                        <th className="text-left text-xs font-medium text-[var(--foreground-muted)] uppercase tracking-wider px-4 py-3">Timestamp</th>
 
                                     </tr>
                                 </thead>
@@ -318,7 +247,10 @@ export default function VerifyPage() {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-1.5">
-                                                    <a href={`/nod/${nod.id}`} className="text-sm font-medium text-[var(--foreground)] hover:underline decoration-emerald-500/30 underline-offset-4">
+                                                    <a
+                                                        href={`/nod/${nod.id}`}
+                                                        className="text-sm font-medium text-[var(--foreground)] hover:text-emerald-600 hover:underline decoration-emerald-500/30 underline-offset-4 transition-colors"
+                                                    >
                                                         <ProfileName username={nod.creator} />
                                                     </a>
                                                     {nod.createdByMe && (
@@ -328,9 +260,12 @@ export default function VerifyPage() {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="text-sm font-medium text-[var(--foreground)]">
+                                                    <a
+                                                        href={`/nod/${nod.id}`}
+                                                        className="text-sm font-medium text-[var(--foreground)] hover:text-emerald-600 hover:underline decoration-emerald-500/30 underline-offset-4 transition-colors"
+                                                    >
                                                         <ProfileName username={nod.counterparty} />
-                                                    </span>
+                                                    </a>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
@@ -338,6 +273,9 @@ export default function VerifyPage() {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="text-sm text-[var(--foreground-muted)]">{nod.createdAt}</span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className="text-sm font-mono text-[var(--foreground-muted)]">{nod.timestamp}</span>
                                             </td>
 
                                         </motion.tr>

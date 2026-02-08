@@ -23,16 +23,49 @@ import { cn } from "@/lib/utils";
 import { useNods } from "@/lib/store";
 import { ProfileName } from "@/components/nod/profile-name";
 import { NodIdentityCard } from "@/components/profile/nod-identity-card";
+import { HashVerificationModal } from "@/components/nod/hash-verification-modal";
 
 export default function NodDetailPage() {
     const params = useParams();
     const router = useRouter();
     const nodId = params.id as string;
-    const { getNodById, updateNodStatus, isLoaded } = useNods();
+    const { getNodById, updateNodStatus, isLoaded, isParticipant, userProfile } = useNods();
 
     const nod = getNodById(nodId);
 
     const [isActionLoading, setIsActionLoading] = useState<"accept" | "reject" | null>(null);
+    const [hasAccess, setHasAccess] = useState(false);
+
+    // Check if user has access (participant or verified hash)
+    React.useEffect(() => {
+        if (!nod || !isLoaded) return;
+
+        console.log('Access check:', {
+            nodId,
+            creator: nod.creator,
+            counterparty: nod.counterparty,
+            isParticipantResult: isParticipant(nod)
+        });
+
+        // Check if user is a participant
+        if (isParticipant(nod)) {
+            console.log('User is participant - granting access');
+            setHasAccess(true);
+            return;
+        }
+
+        // Check if hash was previously verified in this session
+        const verifiedHashes = JSON.parse(sessionStorage.getItem("verified_nod_hashes") || "{}");
+        if (verifiedHashes[nodId]) {
+            console.log('Hash previously verified - granting access');
+            setHasAccess(true);
+            return;
+        }
+
+        console.log('Access denied - showing verification modal');
+        setHasAccess(false);
+    }, [nod, nodId, isLoaded, isParticipant]);
+
 
     // Show loading state while fetching from storage
     if (!isLoaded) {
@@ -73,6 +106,25 @@ export default function NodDetailPage() {
         setIsActionLoading(null);
     };
 
+    // Show hash verification modal if user doesn't have access
+    if (!hasAccess && nod) {
+        return (
+            <div className="max-w-2xl mx-auto space-y-6">
+                <Button variant="ghost" size="sm" asChild>
+                    <Link href="/">
+                        <HugeiconsIcon icon={ArrowLeft01Icon} className="w-4 h-4" />
+                        Back to Dashboard
+                    </Link>
+                </Button>
+
+                <HashVerificationModal
+                    expectedHash={nod.hash}
+                    nodId={nodId}
+                    onVerified={() => setHasAccess(true)}
+                />
+            </div>
+        );
+    }
 
 
     return (
@@ -161,8 +213,8 @@ export default function NodDetailPage() {
 
                     </CardContent>
 
-                    {/* Actions for Received Nods */}
-                    {!nod.createdByMe && nod.status === "awaiting" && (
+                    {/* Actions for Received Nods - Only show to the actual counterparty */}
+                    {nod.status === "awaiting" && userProfile?.username === nod.counterparty && (
                         <CardFooter className="grid grid-cols-2 gap-3 pt-2">
                             <Button
                                 variant="outline"

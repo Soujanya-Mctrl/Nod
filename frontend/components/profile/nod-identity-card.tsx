@@ -61,49 +61,41 @@ export function NodIdentityCard({
                         <span className="font-mono text-[11px] font-semibold text-gray-800 truncate">
                             {displayId}
                         </span>
-                        <button
-                            onClick={handleCopy}
-                            className="p-1 hover:bg-gray-100 rounded transition-all duration-200 text-gray-400 hover:text-emerald-500 shrink-0"
-                            title="Copy to clipboard"
-                            aria-label="Copy ID"
-                        >
-                            <AnimatePresence mode="wait" initial={false}>
-                                {copied ? (
-                                    <motion.div
-                                        key="check"
-                                        initial={{ scale: 0.5, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.5, opacity: 0 }}
-                                        transition={{ duration: 0.1 }}
-                                    >
-                                        <Check className="w-3 h-3 text-emerald-500" />
-                                    </motion.div>
-                                ) : (
-                                    <motion.div
-                                        key="copy"
-                                        initial={{ scale: 0.5, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.5, opacity: 0 }}
-                                        transition={{ duration: 0.1 }}
-                                    >
-                                        <Copy className="w-3 h-3 translate-y-[0.5px]" />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </button>
                     </div>
                 </div>
 
-                {/* Right Section - User Button */}
+                {/* Right Section - Copy Button */}
                 <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={onUserClick}
-                    className="w-7 h-7 shrink-0 bg-gray-50 hover:bg-emerald-50 rounded-lg border border-gray-100 flex items-center justify-center transition-all group/user"
-                    title="View user details"
-                    aria-label="View user"
+                    onClick={handleCopy}
+                    className="w-7 h-7 shrink-0 bg-gray-50 hover:bg-emerald-50 rounded-lg border border-gray-100 flex items-center justify-center transition-all group/copy"
+                    title="Copy to clipboard"
+                    aria-label="Copy hash"
                 >
-                    <User className="w-3.5 h-3.5 text-gray-400 group-hover/user:text-emerald-600 transition-colors" />
+                    <AnimatePresence mode="wait" initial={false}>
+                        {copied ? (
+                            <motion.div
+                                key="check"
+                                initial={{ scale: 0.5, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.5, opacity: 0 }}
+                                transition={{ duration: 0.1 }}
+                            >
+                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="copy"
+                                initial={{ scale: 0.5, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.5, opacity: 0 }}
+                                transition={{ duration: 0.1 }}
+                            >
+                                <Copy className="w-3.5 h-3.5 text-gray-400 group-hover/copy:text-emerald-600 transition-colors" />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </motion.button>
             </div>
         </div>
