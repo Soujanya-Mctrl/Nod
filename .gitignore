@@ -1,0 +1,21 @@
+# Common ignores
+node_modules/
+.DS_Store
+*.log
+.env
+.vercel
+
+# Frontend ignores
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Contracts ignores
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/artifacts/
+contracts/cache_hardhat/
+contracts/typechain-types/

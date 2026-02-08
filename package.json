@@ -1,0 +1,31 @@
+{
+    "name": "nod-dapp",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Nod - A premium blockchain agreement platform",
+    "workspaces": [
+        "frontend",
+        "contracts"
+    ],
+    "scripts": {
+        "dev": "npm run dev --workspace=frontend",
+        "build": "npm run build --workspace=frontend",
+        "start": "npm run start --workspace=frontend",
+        "frontend:dev": "npm run dev --workspace=frontend",
+        "frontend:build": "npm run build --workspace=frontend",
+        "frontend:start": "npm run start --workspace=frontend",
+        "contracts:compile": "npm run compile --workspace=contracts",
+        "contracts:test": "npm run test --workspace=contracts",
+        "contracts:node": "npm run node --workspace=contracts",
+        "contracts:deploy": "npm run deploy --workspace=contracts"
+    },
+    "keywords": [
+        "blockchain",
+        "dapp",
+        "agreement",
+        "solidity",
+        "nextjs"
+    ],
+    "author": "Antigravity",
+    "license": "MIT"
+}

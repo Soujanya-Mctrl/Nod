@@ -1,0 +1,17 @@
+{
+    "name": "contracts",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Smart contracts for the Nod project",
+    "scripts": {
+        "compile": "hardhat compile",
+        "test": "hardhat test",
+        "node": "hardhat node",
+        "deploy": "hardhat run scripts/deploy.ts"
+    },
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+        "dotenv": "^16.4.7",
+        "hardhat": "^2.22.18"
+    }
+}
