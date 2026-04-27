@@ -7,6 +7,9 @@ export interface Nod {
     id: string;
     text: string;
     hash: string;
+    cid?: string;
+    sig1?: string;
+    sig2?: string;
     transactionHash: string;
     creator: string;
     counterparty: string;
@@ -14,6 +17,8 @@ export interface Nod {
     createdAt: string;
     timestamp: string;
     createdByMe: boolean;
+    expiresAt?: number;
+    nonce?: number;
 }
 
 export interface Profile {

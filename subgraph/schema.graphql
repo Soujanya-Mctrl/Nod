@@ -1,0 +1,9 @@
+type Agreement @entity {
+  id: ID! # agreementId
+  cid: String!
+  initiator: Bytes!
+  counterparty: Bytes!
+  status: Int! # 1: Nodded, 2: Declined
+  createdAt: BigInt!
+  timestamp: BigInt!
+}

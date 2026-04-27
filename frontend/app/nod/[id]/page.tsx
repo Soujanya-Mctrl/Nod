@@ -24,6 +24,8 @@ import { useNods } from "@/lib/store";
 import { ProfileName } from "@/components/nod/profile-name";
 import { NodIdentityCard } from "@/components/profile/nod-identity-card";
 import { HashVerificationModal } from "@/components/nod/hash-verification-modal";
+import { useAccount, useSignTypedData, useWriteContract, useChainId } from "wagmi";
+import { NodABI } from "../../../lib/abi/NodABI";
 
 export default function NodDetailPage() {
     const params = useParams();
@@ -36,20 +38,30 @@ export default function NodDetailPage() {
     const [isActionLoading, setIsActionLoading] = useState<"accept" | "reject" | null>(null);
     const [hasAccess, setHasAccess] = useState(false);
 
+    const { address } = useAccount();
+    const chainId = useChainId();
+    const { signTypedDataAsync } = useSignTypedData();
+    const { writeContractAsync } = useWriteContract();
+
     // Check if user has access (participant or verified hash)
     React.useEffect(() => {
         if (!nod || !isLoaded) return;
 
-        console.log('Access check:', {
-            nodId,
-            creator: nod.creator,
-            counterparty: nod.counterparty,
-            isParticipantResult: isParticipant(nod)
-        });
+        // Fetch draft from backend if signatures are missing
+        if (!nod.sig1) {
+            fetch(`/api/nods/draft?id=${nodId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.sig1) {
+                        // Merge draft data into store
+                        // In a real app, this would be a store action
+                    }
+                })
+                .catch(err => console.error("Failed to fetch draft", err));
+        }
 
         // Check if user is a participant
         if (isParticipant(nod)) {
-            console.log('User is participant - granting access');
             setHasAccess(true);
             return;
         }
@@ -57,12 +69,10 @@ export default function NodDetailPage() {
         // Check if hash was previously verified in this session
         const verifiedHashes = JSON.parse(sessionStorage.getItem("verified_nod_hashes") || "{}");
         if (verifiedHashes[nodId]) {
-            console.log('Hash previously verified - granting access');
             setHasAccess(true);
             return;
         }
 
-        console.log('Access denied - showing verification modal');
         setHasAccess(false);
     }, [nod, nodId, isLoaded, isParticipant]);
 
@@ -99,11 +109,70 @@ export default function NodDetailPage() {
     }
 
     const handleAction = async (action: "accept" | "reject") => {
+        if (!nod || !address) return;
         setIsActionLoading(action);
-        await new Promise(resolve => setTimeout(resolve, 1500));
 
-        updateNodStatus(nod.id, action === "accept" ? "nodded" : "declined");
-        setIsActionLoading(null);
+        try {
+            if (action === "accept") {
+                // 1. Sign the same payload
+                const domain = {
+                    name: "Nod",
+                    version: "1",
+                    chainId: chainId,
+                } as const;
+
+                const types = {
+                    Agreement: [
+                        { name: "cid", type: "string" },
+                        { name: "initiator", type: "address" },
+                        { name: "counterparty", type: "address" },
+                        { name: "createdAt", type: "uint256" },
+                        { name: "expiresAt", type: "uint256" },
+                        { name: "nonce", type: "uint256" },
+                    ],
+                } as const;
+
+                const value = {
+                    cid: nod.cid || "",
+                    initiator: nod.creator as `0x${string}`,
+                    counterparty: nod.counterparty as `0x${string}`,
+                    createdAt: BigInt(nod.expiresAt ? nod.expiresAt - 86400 * 7 : 0), // Mocking back
+                    expiresAt: BigInt(nod.expiresAt || 0),
+                    nonce: BigInt(nod.nonce || 0),
+                };
+
+                const sig2 = await signTypedDataAsync({
+                    domain,
+                    types,
+                    primaryType: "Agreement",
+                    message: value,
+                });
+
+                // 2. Call contract to seal
+                await writeContractAsync({
+                    address: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`,
+                    abi: NodABI,
+                    functionName: "sealAgreement",
+                    args: [
+                        nod.cid || "",
+                        nod.creator as `0x${string}`,
+                        nod.counterparty as `0x${string}`,
+                        value.createdAt,
+                        value.expiresAt,
+                        value.nonce,
+                        nod.sig1 as `0x${string}`,
+                        sig2,
+                    ],
+                });
+            }
+
+            updateNodStatus(nod.id, action === "accept" ? "nodded" : "declined");
+            setIsActionLoading(null);
+        } catch (error) {
+            console.error("Failed to action nod:", error);
+            alert("Action failed. See console.");
+            setIsActionLoading(null);
+        }
     };
 
     // Show hash verification modal if user doesn't have access

@@ -1,0 +1,7 @@
+[package]
+name = "nod_circuit"
+type = "bin"
+authors = ["Antigravity"]
+compiler_version = ">=0.31.0"
+
+[dependencies]

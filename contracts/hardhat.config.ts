@@ -5,7 +5,17 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: "../.env" });
 
 const config: HardhatUserConfig = {
-    solidity: "0.8.28",
+    solidity: {
+        version: "0.8.28",
+        settings: {
+            evmVersion: "cancun",
+            viaIR: true,
+            optimizer: {
+                enabled: true,
+                runs: 200,
+            },
+        },
+    },
     networks: {
         // Example:
         // sepolia: {

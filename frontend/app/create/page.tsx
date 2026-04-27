@@ -18,6 +18,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useAccount, useSignTypedData, useChainId } from "wagmi";
+import { uploadToIPFS } from "@/lib/ipfs";
 import { useNods, type Nod } from "@/lib/store";
 import { generateHash, truncateHash, cn } from "@/lib/utils";
 
@@ -31,53 +33,122 @@ export default function CreateNodPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
 
+    const { address, isConnected } = useAccount();
+    const chainId = useChainId();
+    const { signTypedDataAsync } = useSignTypedData();
+
     const isValid = agreement.trim().length > 0 && counterparty.trim().length > 0;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isValid) return;
+        if (!isValid || !address) {
+            if (!isConnected) alert("Please connect your wallet first");
+            return;
+        }
 
         setIsSubmitting(true);
 
-        // Simulate sealing process
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+            // 1. Upload to IPFS
+            const agreementData = {
+                text: agreement.trim(),
+                creator: address,
+                counterparty: counterparty,
+                timestamp: new Date().toISOString(),
+            };
+            const ipfsResult = await uploadToIPFS(agreementData);
+            const cid = ipfsResult.IpfsHash;
 
-        // Canonical Bundle Hashing: Agreement + Creator + Timestamp
-        // This ensures the hash is unique to this specific instance and context
-        const timestamp = new Date().toISOString();
-        const creator = "alex"; // Mock current user
-        const canonicalString = `${agreement.trim()}|@${creator}|${timestamp}`;
-        const finalHash = await generateHash(canonicalString);
+            // 2. Prepare EIP-712 Typed Data
+            const domain = {
+                name: "Nod",
+                version: "1",
+                chainId: chainId,
+                // verifyingContract: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`
+            } as const;
 
-        // Create new Nod object
-        const txHash = "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
+            const types = {
+                Agreement: [
+                    { name: "cid", type: "string" },
+                    { name: "initiator", type: "address" },
+                    { name: "counterparty", type: "address" },
+                    { name: "createdAt", type: "uint256" },
+                    { name: "expiresAt", type: "uint256" },
+                    { name: "nonce", type: "uint256" },
+                ],
+            } as const;
 
-        const newNod: Nod = {
-            id: Math.random().toString(36).substr(2, 9), // Simple ID generation
-            text: agreement.trim(),
-            hash: finalHash,
-            transactionHash: txHash,
-            creator: "alex",
-            counterparty: counterparty.replace('@', ''),
-            status: "awaiting",
-            createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
-            createdByMe: true
-        };
+            const createdAt = Math.floor(Date.now() / 1000);
+            const expiresAt = deadline ? Math.floor(new Date(deadline).getTime() / 1000) : createdAt + 86400 * 7;
+            const nonce = 0; // Fetching from contract would be better
 
-        // Add to store
-        addNod(newNod);
+            const value = {
+                cid,
+                initiator: address,
+                counterparty: (counterparty.startsWith('0x') ? counterparty : address) as `0x${string}`, // Fallback if not address
+                createdAt: BigInt(createdAt),
+                expiresAt: BigInt(expiresAt),
+                nonce: BigInt(nonce),
+            };
 
-        setHash(finalHash);
-        setShowSuccess(true);
-        setIsSubmitting(false);
+            // 3. Sign with Wallet
+            const signature = await signTypedDataAsync({
+                domain,
+                types,
+                primaryType: "Agreement",
+                message: value,
+            });
 
-        // Redirect after a short delay to show success state
-        setTimeout(() => {
-            router.push("/");
-        }, 2500);
+            // 4. Send to Backend Relay
+            const nodId = Math.random().toString(36).substr(2, 9);
+            await fetch("/api/nods/draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: nodId,
+                    cid,
+                    initiator: address,
+                    counterparty,
+                    text: agreement.trim(),
+                    sig1: signature,
+                    expiresAt,
+                    nonce
+                }),
+            });
+
+            // 5. Update local store
+            const finalHash = await generateHash(`${agreement.trim()}|${address}|${createdAt}`);
+            const newNod: Nod = {
+                id: nodId,
+                text: agreement.trim(),
+                hash: finalHash,
+                cid,
+                sig1: signature,
+                transactionHash: "",
+                creator: address,
+                counterparty: counterparty,
+                status: "awaiting",
+                createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+                createdByMe: true,
+                expiresAt,
+                nonce
+            };
+            addNod(newNod);
+
+            setHash(finalHash);
+            setShowSuccess(true);
+            setIsSubmitting(false);
+
+            setTimeout(() => {
+                router.push("/");
+            }, 2500);
+
+        } catch (error) {
+            console.error("Failed to seal nod:", error);
+            alert("Failed to seal nod. Make sure your wallet is connected and you approve the signature.");
+            setIsSubmitting(false);
+        }
     };
 
     if (showSuccess) {
@@ -148,7 +219,7 @@ export default function CreateNodPage() {
                                     Who are you making this nod with?
                                 </label>
                                 <Input
-                                    placeholder="@username or email"
+                                    placeholder="0x... (Ethereum Address)"
                                     value={counterparty}
                                     onChange={(e) => setCounterparty(e.target.value)}
                                 />
