@@ -1,0 +1,14 @@
+{
+  "name": "subgraph",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "deploy": "graph deploy --node https://api.thegraph.com/deploy/ <SUBGRAPH_NAME>"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.94.0",
+    "@graphprotocol/graph-ts": "^0.35.1"
+  }
+}

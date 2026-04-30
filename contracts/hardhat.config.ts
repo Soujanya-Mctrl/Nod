@@ -17,14 +17,17 @@ const config: HardhatUserConfig = {
         },
     },
     networks: {
-        // Example:
-        // sepolia: {
-        //   url: process.env.RPC_URL || "",
-        //   accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-        // },
+        sepolia: {
+            url: process.env.RPC_URL || "",
+            accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "your_private_key" ? [process.env.PRIVATE_KEY] : [],
+        },
+        // You can add more networks here, e.g., baseSepolia
+    },
+    etherscan: {
+        apiKey: process.env.ETHERSCAN_API_KEY,
     },
     paths: {
-        sources: "./contracts",
+        sources: "./src",
         tests: "./test",
         cache: "./cache",
         artifacts: "./artifacts"

@@ -1,0 +1,13 @@
+{
+  "solidity.packageDefaultDependenciesDirectory": [
+    "node_modules",
+    "contracts/node_modules"
+  ],
+  "solidity.remappings": [
+    "@openzeppelin/contracts/=contracts/node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/"
+  ],
+  "solidity.monodeploy": true,
+  "solidity.enabledAsDefaultCompiler": true
+}
+
