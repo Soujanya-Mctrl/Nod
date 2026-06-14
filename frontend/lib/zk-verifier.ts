@@ -1,36 +1,21 @@
-/**
- * ZK Proof Generation & Verification (Client-Side Demo)
- * 
- * This module demonstrates the concept of Zero-Knowledge proof verification
- * for Nod agreements. In production, this would use the Noir circuit (circuits/src/main.nr)
- * compiled to WASM for in-browser proving.
- * 
- * Current implementation uses SHA-256-based commitments to simulate the ZK flow:
- * 1. Prover constructs witness from private inputs
- * 2. Prover generates a commitment (proof) from the witness
- * 3. Verifier checks that the commitment matches the public inputs
- * 
- * The Noir circuit verifies:
- * - sig1 (initiator Ed25519 signature) over the commitment
- * - sig2 (counterparty Ed25519 signature) over the commitment
- * - status_nodded == true
- * - timestamp < expires_at
- */
+import { generateProof, verifyProof, bytesToHex } from "./noir-zk";
+import { StrKey } from "@stellar/stellar-sdk";
 
 export interface ZKPublicInputs {
-    commitment: string;        // 32-byte hex — hash of (text, timestamp, nonce)
-    initiatorPubKey: string;   // Stellar public key of initiator
-    counterpartyPubKey: string; // Stellar public key of counterparty
+    commitment: string;        // 32-byte hex
+    initiatorPubKey: string;   // Stellar G-address
+    counterpartyPubKey: string; // Stellar G-address
     statusNodded: boolean;
     expiresAt: number;
 }
 
 export interface ZKProof {
-    proofHex: string;          // The generated proof bytes (hex)
+    proofHex: string;          // Hex encoded proof bytes
     publicInputs: ZKPublicInputs;
     generatedAt: number;
     circuitName: string;
     isSimulated: boolean;
+    realProof: any;            // The raw proof object returned by bb.js
 }
 
 export interface ZKVerificationResult {
@@ -44,33 +29,15 @@ export interface ZKVerificationResult {
 }
 
 /**
- * SHA-256 hash helper (browser-native)
+ * SHA-256 helper for browser environments
  */
-async function sha256(input: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(input);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+async function computeSha256(data: Uint8Array): Promise<Uint8Array> {
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data as any);
+    return new Uint8Array(hashBuffer);
 }
 
 /**
- * Generate a deterministic nonce from agreement parameters
- */
-async function generateNonce(text: string, initiator: string, timestamp: number): Promise<string> {
-    return sha256(`nonce:${text}:${initiator}:${timestamp}:${Math.floor(timestamp / 1000)}`);
-}
-
-/**
- * Generate a ZK proof for a Nod agreement.
- * 
- * This demonstrates the proving flow:
- * 1. Private inputs: agreement text, timestamp, nonce, signatures
- * 2. Public inputs: commitment hash, public keys, status, expiry
- * 3. The proof attests: "I know the private inputs that produce this commitment,
- *    and both parties have signed it, and the agreement is active and not expired."
- * 
- * In production this would invoke the Noir WASM prover.
+ * Generates a real ZK Proof using Noir & Barretenberg (UltraHonk)
  */
 export async function generateZKProof(params: {
     text: string;
@@ -81,129 +48,135 @@ export async function generateZKProof(params: {
     status: string;
     contentHash: string;
 }): Promise<ZKProof> {
-    const { text, initiator, counterparty, timestamp, expiresAt, status, contentHash } = params;
+    const { text, initiator, counterparty, timestamp, expiresAt, status } = params;
 
-    // Step 1: Generate the nonce (private)
-    const nonce = await generateNonce(text, initiator, timestamp);
+    console.log("[ZK-Wrapper] Initializing ZK proof generation for Nod...");
 
-    // Step 2: Compute the commitment = SHA-256(text | timestamp | nonce)
-    // This is the public binding between private data and public proof
-    const commitment = await sha256(`${text}|${timestamp}|${nonce}`);
+    // 1. Compute SHA-256 of the agreement text (private input)
+    const textBytes = new TextEncoder().encode(text);
+    const agreementTextHash = await computeSha256(textBytes);
 
-    // Step 3: Simulate signature proofs
-    // In production, these would be actual Ed25519 signatures verified inside the Noir circuit
-    const sig1Proof = await sha256(`sig1:${initiator}:${commitment}`);
-    const sig2Proof = await sha256(`sig2:${counterparty}:${commitment}`);
+    // 2. Decode initiator public G-address to 32 bytes (private input)
+    const initiatorBytes = StrKey.decodeEd25519PublicKey(initiator);
 
-    // Step 4: Build the proof — hash of all witness elements
-    // This simulates what the Noir prover would output: a compact proof
-    // that attests to knowledge of all private inputs
-    const proofPreimage = [
-        commitment,
-        sig1Proof,
-        sig2Proof,
+    // 3. Convert timestamp to 8-byte big-endian (private input)
+    const createdAtBytes = new Uint8Array(8);
+    const view = new DataView(createdAtBytes.buffer);
+    view.setBigUint64(0, BigInt(timestamp), false);
+
+    // 4. Generate random 32-byte nonce (private input)
+    const nonce = crypto.getRandomValues(new Uint8Array(32));
+
+    // 5. Compute commitment = SHA-256(agreement_text_hash || initiator_bytes || created_at_bytes || nonce)
+    const preimage = new Uint8Array(104);
+    preimage.set(agreementTextHash, 0);
+    preimage.set(initiatorBytes, 32);
+    preimage.set(createdAtBytes, 64);
+    preimage.set(nonce, 72);
+
+    const commitmentBytes = await computeSha256(preimage);
+    const commitmentHex = bytesToHex(commitmentBytes);
+
+    const isNodded = status === "nodded" || status === "completed" || status === "delivered";
+
+    // 6. Generate the actual cryptographic proof
+    const realProof = await generateProof({
+        agreementTextHash,
+        initiatorAddress: initiator,
+        createdAt: timestamp,
         nonce,
-        status === "nodded" || status === "completed" || status === "delivered" ? "1" : "0",
-        String(timestamp),
-        String(expiresAt),
-    ].join("|");
+        commitment: commitmentBytes,
+        statusNodded: isNodded,
+        expiresAt: expiresAt,
+        timestamp: timestamp,
+    });
 
-    const proofHex = await sha256(proofPreimage);
+    const proofHex = bytesToHex(realProof.proof);
 
-    // Step 5: Construct the public inputs (what the verifier sees)
     const publicInputs: ZKPublicInputs = {
-        commitment,
+        commitment: commitmentHex,
         initiatorPubKey: initiator,
         counterpartyPubKey: counterparty,
-        statusNodded: status === "nodded" || status === "completed" || status === "delivered",
-        expiresAt,
+        statusNodded: isNodded,
+        expiresAt: expiresAt,
     };
 
     return {
         proofHex,
         publicInputs,
         generatedAt: Date.now(),
-        circuitName: "nod_circuits (Noir v0.30+)",
-        isSimulated: true,
+        circuitName: "nod_circuits (Noir v1.0.0-beta.20)",
+        isSimulated: false,
+        realProof,
     };
 }
 
 /**
- * Verify a ZK proof against public inputs.
- * 
- * Checks:
- * 1. Commitment is a valid 32-byte hash
- * 2. Public keys are valid Stellar addresses
- * 3. Status is Nodded (agreement is active)
- * 4. Agreement is not expired
- * 5. Proof hash is structurally valid
- * 
- * In production, this would call the Noir verifier compiled to WASM.
+ * Verifies a ZK proof against the public inputs and constraints
  */
 export async function verifyZKProof(proof: ZKProof): Promise<ZKVerificationResult> {
     const checks: ZKVerificationResult["checks"] = [];
-    const { publicInputs, proofHex } = proof;
+    const { publicInputs, realProof } = proof;
 
     // Check 1: Commitment format
     const commitmentValid = /^[0-9a-f]{64}$/.test(publicInputs.commitment);
     checks.push({
-        name: "Commitment Hash",
+        name: "Commitment Hash Format",
         passed: commitmentValid,
         detail: commitmentValid
-            ? `Valid SHA-256 commitment: 0x${publicInputs.commitment.slice(0, 16)}...`
+            ? `Valid 32-byte hex commitment: 0x${publicInputs.commitment.slice(0, 12)}...`
             : "Invalid commitment format — expected 32-byte hex",
     });
 
-    // Check 2: Initiator public key
+    // Check 2: Initiator public key format
     const initiatorValid = publicInputs.initiatorPubKey.length === 56 && publicInputs.initiatorPubKey.startsWith("G");
     checks.push({
-        name: "Initiator Public Key",
+        name: "Initiator Address format",
         passed: initiatorValid,
         detail: initiatorValid
-            ? `Valid Stellar Ed25519 key: ${publicInputs.initiatorPubKey.slice(0, 8)}...${publicInputs.initiatorPubKey.slice(-4)}`
+            ? `Valid G-address: ${publicInputs.initiatorPubKey.slice(0, 8)}...${publicInputs.initiatorPubKey.slice(-4)}`
             : "Invalid Stellar public key format",
     });
 
-    // Check 3: Counterparty public key
-    const counterpartyValid = publicInputs.counterpartyPubKey.length === 56 && publicInputs.counterpartyPubKey.startsWith("G");
+    // Check 3: Expiry validation
+    const now = Math.floor(Date.now() / 1000);
+    const notExpired = publicInputs.expiresAt === 0 || publicInputs.expiresAt > now;
     checks.push({
-        name: "Counterparty Public Key",
-        passed: counterpartyValid,
-        detail: counterpartyValid
-            ? `Valid Stellar Ed25519 key: ${publicInputs.counterpartyPubKey.slice(0, 8)}...${publicInputs.counterpartyPubKey.slice(-4)}`
-            : "Invalid Stellar public key format",
+        name: "Agreement Expiry",
+        passed: notExpired,
+        detail: notExpired
+            ? publicInputs.expiresAt === 0
+                ? "No expiry date set (ongoing)"
+                : `Expires at: ${new Date(publicInputs.expiresAt * 1000).toLocaleDateString()}`
+            : `Expired at: ${new Date(publicInputs.expiresAt * 1000).toLocaleDateString()}`,
     });
 
     // Check 4: Status is Nodded
     checks.push({
-        name: "Agreement Status",
+        name: "Contract Status Constraint",
         passed: publicInputs.statusNodded,
         detail: publicInputs.statusNodded
-            ? "Agreement is active (Nodded/Delivered/Completed)"
-            : "Agreement is not in an active state",
+            ? "Agreement status is Nodded/Active"
+            : "Agreement is not in Nodded status (cannot verify)",
     });
 
-    // Check 5: Expiry check
-    const now = Math.floor(Date.now() / 1000);
-    const notExpired = publicInputs.expiresAt === 0 || publicInputs.expiresAt > now;
-    checks.push({
-        name: "Expiry Validation",
-        passed: notExpired,
-        detail: notExpired
-            ? publicInputs.expiresAt === 0
-                ? "No expiry set (ongoing agreement)"
-                : `Expires at ${new Date(publicInputs.expiresAt * 1000).toLocaleString()}`
-            : `Agreement expired at ${new Date(publicInputs.expiresAt * 1000).toLocaleString()}`,
-    });
+    // Check 5: Cryptographic proof verification using Barretenberg WASM
+    let cryptographicValid = false;
+    let detailMsg = "";
+    try {
+        cryptographicValid = await verifyProof(realProof);
+        detailMsg = cryptographicValid
+            ? "UltraHonk SNARK proof verified successfully using Barretenberg WASM backend"
+            : "Cryptographic proof invalid or constraints violated";
+    } catch (err: any) {
+        console.error("Proof verification crashed:", err);
+        detailMsg = `Verification error: ${err.message || err}`;
+    }
 
-    // Check 6: Proof structure
-    const proofValid = /^[0-9a-f]{64}$/.test(proofHex);
     checks.push({
-        name: "Proof Integrity",
-        passed: proofValid,
-        detail: proofValid
-            ? `Valid proof: 0x${proofHex.slice(0, 16)}...`
-            : "Invalid proof format — expected 32-byte hex",
+        name: "Cryptographic Proof Integrity",
+        passed: cryptographicValid,
+        detail: detailMsg,
     });
 
     const allPassed = checks.every((c) => c.passed);

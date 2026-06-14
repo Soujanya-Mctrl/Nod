@@ -94,7 +94,7 @@ export function useNods(): UseNodsReturn {
         if (!isLoaded) return;
 
         if (isConnected && address) {
-            let profile = Object.values(knownProfiles).find(p => p.walletAddress.toLowerCase() === address.toLowerCase());
+            let profile = Object.values(knownProfiles).find(p => p.walletAddress === address);
 
             if (!profile) {
                 // Generate a default profile for new users
@@ -185,9 +185,9 @@ export function useNods(): UseNodsReturn {
                 counterparty: resolvedCounterparty
             };
         }
-        const userWallet = userProfile.walletAddress.toLowerCase();
+        const userWallet = userProfile.walletAddress;
         const userUser = userProfile.username.toLowerCase();
-        const isCreator = nod.creator.toLowerCase() === userWallet || nod.creator.toLowerCase() === userUser;
+        const isCreator = nod.creator === userWallet || nod.creator.toLowerCase() === userUser;
         return {
             ...nod,
             counterparty: resolvedCounterparty,
@@ -200,20 +200,24 @@ export function useNods(): UseNodsReturn {
     const isParticipant = (nod: Nod): boolean => {
         if (!userProfile) return false;
 
-        const creatorLower = nod.creator.toLowerCase();
-        const userUsernameLower = userProfile.username.toLowerCase();
-        const userWalletLower = userProfile.walletAddress.toLowerCase();
+        const userUsername = userProfile.username.toLowerCase();
+        const userWallet = userProfile.walletAddress;
 
-        if (creatorLower === userUsernameLower || creatorLower === userWalletLower) {
+        if (nod.creator === userWallet || nod.creator.toLowerCase() === userUsername) {
             return true;
         }
 
         if (nod.counterparties) {
             for (const cp of nod.counterparties) {
-                const cpLower = cp.toLowerCase();
-                if (cpLower === userUsernameLower || cpLower === userWalletLower) {
+                if (cp === userWallet || cp.toLowerCase() === userUsername) {
                     return true;
                 }
+            }
+        }
+
+        if (nod.arbitrator) {
+            if (nod.arbitrator === userWallet || nod.arbitrator.toLowerCase() === userUsername) {
+                return true;
             }
         }
 

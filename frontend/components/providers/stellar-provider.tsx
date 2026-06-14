@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/toast";
 interface StellarWalletContextType {
     isConnected: boolean;
     isConnecting: boolean;
+    isInitializing: boolean;
     address: string | null;
     connect: () => Promise<string | null>;
     disconnect: () => void;
@@ -15,6 +16,7 @@ interface StellarWalletContextType {
 const StellarWalletContext = createContext<StellarWalletContextType>({
     isConnected: false,
     isConnecting: false,
+    isInitializing: true,
     address: null,
     connect: async () => null,
     disconnect: () => {},
@@ -23,6 +25,7 @@ const StellarWalletContext = createContext<StellarWalletContextType>({
 export const StellarProvider = ({ children }: { children: React.ReactNode }) => {
     const [address, setAddress] = useState<string | null>(null);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isInitializing, setIsInitializing] = useState(true);
     const toast = useToast();
 
     // Load active account and listen to focus events for user switching
@@ -47,6 +50,8 @@ export const StellarProvider = ({ children }: { children: React.ReactNode }) => 
                 }
             } catch (e) {
                 console.log("Failed to check connection or fetch address:", e);
+            } finally {
+                setIsInitializing(false);
             }
         };
 
@@ -95,6 +100,7 @@ export const StellarProvider = ({ children }: { children: React.ReactNode }) => 
             value={{
                 isConnected: !!address,
                 isConnecting,
+                isInitializing,
                 address,
                 connect,
                 disconnect,

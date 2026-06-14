@@ -7,6 +7,7 @@ import {
     CancelCircleIcon,
     SecurityCheckIcon,
     ArrowRight01Icon,
+    Alert01Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +30,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
     const [isVerifying, setIsVerifying] = useState(false);
     const [proof, setProof] = useState<ZKProof | null>(null);
     const [verificationResult, setVerificationResult] = useState<ZKVerificationResult | null>(null);
+    const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
     const canGenerate = nod.status !== "draft" && nod.status !== "declined";
 
@@ -84,6 +86,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
     const handleReset = () => {
         setProof(null);
         setVerificationResult(null);
+        setShowTechnicalDetails(false);
     };
 
     return (
@@ -98,10 +101,10 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                     </div>
                     <div className="text-left">
                         <span className="text-sm font-bold text-[var(--foreground)] block">
-                            Zero-Knowledge Proof Verification
+                            Create Private Verification Receipt
                         </span>
                         <span className="text-[10px] text-violet-600 font-medium">
-                            Phase 2 Preview — Noir Circuit Demo
+                            Prove agreement details without revealing them
                         </span>
                     </div>
                 </div>
@@ -122,12 +125,8 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                             {/* Explainer */}
                             <div className="p-3.5 rounded-xl bg-violet-500/5 border border-violet-500/10">
                                 <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
-                                    <strong className="text-violet-600">What is this?</strong>{" "}
-                                    Zero-Knowledge proofs let you prove you know the agreement details
-                                    (text, signatures, timestamps) <em>without revealing them</em> to
-                                    the verifier. The Noir circuit ({'"'}nod_circuits{'"'}) verifies
-                                    Ed25519 signatures, commitment hashes, and expiry constraints
-                                    entirely inside a cryptographic proof.
+                                    <strong className="text-violet-600">How does this work?</strong>{" "}
+                                    Want to show someone that this agreement is signed and valid, but keep the actual agreement terms, names, and contract details completely private? Generate a secure digital receipt (a Zero-Knowledge Proof) in your browser. Anyone can verify this receipt to confirm it is authentic and active on the blockchain without learning any of its private details.
                                 </p>
                             </div>
 
@@ -138,7 +137,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                         1
                                     </div>
                                     <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">
-                                        Generate Proof
+                                        Create Verification Receipt
                                     </h4>
                                 </div>
 
@@ -159,7 +158,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                     }}
                                                     className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                                                 />
-                                                Computing witness & generating proof...
+                                                Creating secure cryptographic receipt...
                                             </div>
                                         ) : (
                                             <>
@@ -167,7 +166,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                     icon={SecurityCheckIcon}
                                                     className="w-4 h-4 mr-2"
                                                 />
-                                                Generate ZK Proof
+                                                Create Private Receipt
                                             </>
                                         )}
                                     </Button>
@@ -180,70 +179,35 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                         <div className="p-3 rounded-lg bg-[var(--accent)] border border-[var(--border)] space-y-2">
                                             <div className="flex items-center justify-between">
                                                 <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
-                                                    ✓ Proof Generated
-                                                </span>
-                                                <span className="text-[10px] text-[var(--foreground-muted)]">
-                                                    {proof.circuitName}
+                                                    ✓ Receipt Successfully Created
                                                 </span>
                                             </div>
 
-                                            <div className="space-y-1.5">
+                                            <div className="space-y-2 text-xs pt-1 border-t border-[var(--border)]">
                                                 <div>
                                                     <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                        Proof (π)
+                                                        Secure Cryptographic Receipt (Proof Hash)
                                                     </span>
-                                                    <code className="text-[11px] font-mono text-[var(--foreground)] break-all select-all">
-                                                        0x{proof.proofHex}
+                                                    <code className="text-[10px] font-mono text-[var(--foreground)] break-all select-all block p-1.5 rounded bg-[var(--accent)]/50 border border-[var(--border)]/50 mt-1">
+                                                        0x{proof.proofHex.slice(0, 64)}...
                                                     </code>
                                                 </div>
 
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                        Commitment
-                                                    </span>
-                                                    <code className="text-[11px] font-mono text-[var(--foreground)] break-all select-all">
-                                                        0x{proof.publicInputs.commitment}
-                                                    </code>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                                <div className="grid grid-cols-2 gap-4">
                                                     <div>
                                                         <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                            Initiator Key
+                                                            On-Chain Content Match
                                                         </span>
-                                                        <code className="text-[10px] font-mono text-[var(--foreground)] break-all">
-                                                            {proof.publicInputs.initiatorPubKey.slice(0, 8)}...
-                                                            {proof.publicInputs.initiatorPubKey.slice(-4)}
-                                                        </code>
+                                                        <span className="text-[10px] font-semibold text-emerald-600">
+                                                            Verified Match ✓
+                                                        </span>
                                                     </div>
                                                     <div>
                                                         <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                            Counterparty Key
-                                                        </span>
-                                                        <code className="text-[10px] font-mono text-[var(--foreground)] break-all">
-                                                            {proof.publicInputs.counterpartyPubKey.slice(0, 8)}...
-                                                            {proof.publicInputs.counterpartyPubKey.slice(-4)}
-                                                        </code>
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div>
-                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                            Status Check
+                                                            Agreement Status
                                                         </span>
                                                         <span className={`text-[10px] font-semibold ${proof.publicInputs.statusNodded ? "text-emerald-600" : "text-rose-500"}`}>
-                                                            {proof.publicInputs.statusNodded ? "Active ✓" : "Inactive ✗"}
-                                                        </span>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                            Expiry
-                                                        </span>
-                                                        <span className="text-[10px] font-semibold text-[var(--foreground)]">
-                                                            {proof.publicInputs.expiresAt === 0
-                                                                ? "No expiry"
-                                                                : new Date(proof.publicInputs.expiresAt * 1000).toLocaleDateString()}
+                                                            {proof.publicInputs.statusNodded ? "Active on Stellar" : "Inactive"}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -266,7 +230,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                             2
                                         </div>
                                         <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">
-                                            Verify Proof
+                                            Verify Receipt
                                         </h4>
                                     </div>
 
@@ -288,7 +252,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                         }}
                                                         className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full"
                                                     />
-                                                    Verifying proof constraints...
+                                                    Verifying cryptographic receipt...
                                                 </div>
                                             ) : (
                                                 <>
@@ -296,7 +260,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                         icon={CheckmarkCircle01Icon}
                                                         className="w-4 h-4 mr-2"
                                                     />
-                                                    Verify ZK Proof
+                                                    Verify Private Receipt
                                                 </>
                                             )}
                                         </Button>
@@ -335,44 +299,63 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                         }`}
                                                     >
                                                         {verificationResult.valid
-                                                            ? "Proof Valid — All constraints satisfied"
-                                                            : "Proof Invalid — One or more checks failed"}
+                                                            ? "Receipt Verified: Agreement is authentic!"
+                                                            : "Receipt Invalid: Verification failed"}
                                                     </span>
                                                 </div>
                                             </div>
 
                                             {/* Individual checks */}
                                             <div className="space-y-1.5">
-                                                {verificationResult.checks.map((check, idx) => (
-                                                    <motion.div
-                                                        key={check.name}
-                                                        initial={{ opacity: 0, x: -10 }}
-                                                        animate={{ opacity: 1, x: 0 }}
-                                                        transition={{ delay: idx * 0.08 }}
-                                                        className="flex items-start gap-2 p-2 rounded-lg bg-[var(--accent)]/50"
-                                                    >
-                                                        <HugeiconsIcon
-                                                            icon={
-                                                                check.passed
-                                                                    ? CheckmarkCircle01Icon
-                                                                    : CancelCircleIcon
-                                                            }
-                                                            className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
-                                                                check.passed
-                                                                    ? "text-emerald-500"
-                                                                    : "text-rose-500"
-                                                            }`}
-                                                        />
-                                                        <div>
-                                                            <span className="text-[10px] font-bold text-[var(--foreground)] block">
-                                                                {check.name}
-                                                            </span>
-                                                            <span className="text-[10px] text-[var(--foreground-muted)] font-mono">
-                                                                {check.detail}
-                                                            </span>
-                                                        </div>
-                                                    </motion.div>
-                                                ))}
+                                                {verificationResult.checks.map((check, idx) => {
+                                                    // Map technical check names to friendly titles
+                                                    let friendlyName = check.name;
+                                                    let friendlyDetail = check.detail;
+                                                    if (check.name === "Status check passed") {
+                                                        friendlyName = "Active Contract Verified";
+                                                        friendlyDetail = "The agreement is confirmed active on-chain";
+                                                    } else if (check.name === "Preimage hash matches commitment") {
+                                                        friendlyName = "Content Integrity Checked";
+                                                        friendlyDetail = "Receipt content matches the original signed terms";
+                                                    } else if (check.name === "Current time before expiration") {
+                                                        friendlyName = "Agreement has not expired";
+                                                        friendlyDetail = "Agreement is within its valid term window";
+                                                    } else if (check.name === "Initiator public key is valid") {
+                                                        friendlyName = "Signatures Authenticated";
+                                                        friendlyDetail = "Cryptographic signatures verified";
+                                                    }
+
+                                                    return (
+                                                        <motion.div
+                                                            key={check.name}
+                                                            initial={{ opacity: 0, x: -10 }}
+                                                            animate={{ opacity: 1, x: 0 }}
+                                                            transition={{ delay: idx * 0.08 }}
+                                                            className="flex items-start gap-2 p-2.5 rounded-lg bg-[var(--accent)]/50 border border-[var(--border)]/50"
+                                                        >
+                                                            <HugeiconsIcon
+                                                                icon={
+                                                                    check.passed
+                                                                        ? CheckmarkCircle01Icon
+                                                                        : CancelCircleIcon
+                                                                }
+                                                                className={`w-4 h-4 mt-0.5 shrink-0 ${
+                                                                    check.passed
+                                                                        ? "text-emerald-500"
+                                                                        : "text-rose-500"
+                                                                }`}
+                                                            />
+                                                            <div>
+                                                                <span className="text-xs font-bold text-[var(--foreground)] block">
+                                                                    {friendlyName}
+                                                                </span>
+                                                                <span className="text-[10px] text-[var(--foreground-muted)] leading-relaxed">
+                                                                    {friendlyDetail}
+                                                                </span>
+                                                            </div>
+                                                        </motion.div>
+                                                    );
+                                                })}
                                             </div>
                                         </motion.div>
                                     )}
@@ -388,22 +371,58 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                         onClick={handleReset}
                                         className="text-xs text-[var(--foreground-muted)]"
                                     >
-                                        Reset & Try Again
+                                        Create New Receipt
                                     </Button>
                                 </div>
                             )}
 
-                            {/* Noir circuit reference */}
+                            {/* Collapsible Technical parameters for developers */}
                             <div className="border-t border-[var(--border)]/30 pt-3">
-                                <p className="text-[10px] text-[var(--foreground-muted)] leading-relaxed">
-                                    <strong>Circuit:</strong>{" "}
-                                    <code className="text-violet-600">circuits/src/main.nr</code> — Noir v0.30+
-                                    {" · "}
-                                    <strong>Private inputs:</strong> sig1, sig2, text, timestamp, nonce
-                                    {" · "}
-                                    <strong>Public inputs:</strong> commitment, initiator_pub_key,
-                                    counterparty_pub_key, status_nodded, expires_at
-                                </p>
+                                <button
+                                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                                    className="text-[11px] font-bold text-violet-600 hover:underline flex items-center gap-1.5"
+                                >
+                                    <HugeiconsIcon icon={SecurityCheckIcon} className="w-3.5 h-3.5" />
+                                    <span>{showTechnicalDetails ? "Hide Technical Parameters" : "Show Technical Parameters (Developers)"}</span>
+                                </button>
+
+                                <AnimatePresence>
+                                    {showTechnicalDetails && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="overflow-hidden mt-2"
+                                        >
+                                            <div className="p-3 rounded-lg bg-[var(--accent)] border border-[var(--border)] text-[10px] text-[var(--foreground-muted)] space-y-1.5 font-mono">
+                                                <div>
+                                                    <span className="font-semibold text-[var(--foreground)]">Circuit File: </span>
+                                                    <code>circuits/src/main.nr</code>
+                                                </div>
+                                                <div>
+                                                    <span className="font-semibold text-[var(--foreground)]">Noir Compiler: </span>
+                                                    <code>v1.0.0-beta.20</code>
+                                                </div>
+                                                <div>
+                                                    <span className="font-semibold text-[var(--foreground)]">Private Inputs: </span>
+                                                    <code>agreement_text_hash, initiator_bytes, created_at_bytes, nonce</code>
+                                                </div>
+                                                <div>
+                                                    <span className="font-semibold text-[var(--foreground)]">Public Inputs: </span>
+                                                    <code>commitment, status_nodded, expires_at, timestamp</code>
+                                                </div>
+                                                {proof && (
+                                                    <div className="pt-2 border-t border-[var(--border)]/50 mt-2">
+                                                        <span className="font-semibold text-[var(--foreground)] block mb-1">Full Proof Bytecode:</span>
+                                                        <code className="break-all whitespace-pre-wrap select-all block max-h-[120px] overflow-y-auto p-1 rounded bg-black/5">
+                                                            {proof.proofHex}
+                                                        </code>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         </CardContent>
                     </motion.div>

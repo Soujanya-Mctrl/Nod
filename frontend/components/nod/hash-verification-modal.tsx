@@ -13,9 +13,10 @@ interface HashVerificationModalProps {
     expectedHash: string;
     onVerified: () => void;
     nodId: string;
+    isInline?: boolean;
 }
 
-export function HashVerificationModal({ expectedHash, onVerified, nodId }: HashVerificationModalProps) {
+export function HashVerificationModal({ expectedHash, onVerified, nodId, isInline = false }: HashVerificationModalProps) {
     const [inputHash, setInputHash] = useState("");
     const [isVerifying, setIsVerifying] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,74 @@ export function HashVerificationModal({ expectedHash, onVerified, nodId }: HashV
         }
     };
 
+    const formContent = (
+        <form onSubmit={handleVerify} className="space-y-4">
+            <div className="space-y-2">
+                <label htmlFor="hash-input" className="text-sm font-medium text-[var(--foreground)]">
+                    Sealed Content Hash
+                </label>
+                <Input
+                    id="hash-input"
+                    type="text"
+                    placeholder="0x..."
+                    value={inputHash}
+                    onChange={(e) => {
+                        setInputHash(e.target.value);
+                        setError(null);
+                    }}
+                    className={cn(
+                        "font-mono text-sm",
+                        error && "border-red-300 focus-visible:ring-red-500"
+                    )}
+                    disabled={isVerifying}
+                />
+
+                <AnimatePresence mode="wait">
+                    {error && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="flex items-center gap-2 text-sm text-red-600"
+                        >
+                            <HugeiconsIcon icon={CancelCircleIcon} className="w-4 h-4" />
+                            <span>{error}</span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
+            <Button
+                type="submit"
+                className="w-full font-semibold"
+                disabled={isVerifying || !inputHash.trim()}
+            >
+                {isVerifying ? (
+                    <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                        className="w-5 h-5 border-2 border-[var(--background)]/30 border-t-[var(--background)] rounded-full"
+                    />
+                ) : (
+                    <>
+                        <HugeiconsIcon icon={CheckmarkCircle01Icon} className="w-4 h-4 mr-2" />
+                        Verify & View
+                    </>
+                )}
+            </Button>
+
+            <div className="pt-2 border-t border-[var(--border)]">
+                <p className="text-xs text-[var(--foreground-muted)] text-center">
+                    💡 Tip: You can find the content hash in the registry table or from the agreement creator.
+                </p>
+            </div>
+        </form>
+    );
+
+    if (isInline) {
+        return formContent;
+    }
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -68,67 +137,7 @@ export function HashVerificationModal({ expectedHash, onVerified, nodId }: HashV
                 </CardHeader>
 
                 <CardContent>
-                    <form onSubmit={handleVerify} className="space-y-4">
-                        <div className="space-y-2">
-                            <label htmlFor="hash-input" className="text-sm font-medium text-[var(--foreground)]">
-                                Sealed Content Hash
-                            </label>
-                            <Input
-                                id="hash-input"
-                                type="text"
-                                placeholder="0x..."
-                                value={inputHash}
-                                onChange={(e) => {
-                                    setInputHash(e.target.value);
-                                    setError(null);
-                                }}
-                                className={cn(
-                                    "font-mono text-sm",
-                                    error && "border-red-300 focus-visible:ring-red-500"
-                                )}
-                                disabled={isVerifying}
-                            />
-
-                            <AnimatePresence mode="wait">
-                                {error && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        className="flex items-center gap-2 text-sm text-red-600"
-                                    >
-                                        <HugeiconsIcon icon={CancelCircleIcon} className="w-4 h-4" />
-                                        <span>{error}</span>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-
-                        <Button
-                            type="submit"
-                            className="w-full"
-                            disabled={isVerifying || !inputHash.trim()}
-                        >
-                            {isVerifying ? (
-                                <motion.div
-                                    animate={{ rotate: 360 }}
-                                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                    className="w-5 h-5 border-2 border-[var(--background)]/30 border-t-[var(--background)] rounded-full"
-                                />
-                            ) : (
-                                <>
-                                    <HugeiconsIcon icon={CheckmarkCircle01Icon} className="w-4 h-4 mr-2" />
-                                    Verify & View
-                                </>
-                            )}
-                        </Button>
-
-                        <div className="pt-2 border-t border-[var(--border)]">
-                            <p className="text-xs text-[var(--foreground-muted)] text-center">
-                                💡 Tip: You can find the content hash in the registry table or from the agreement creator.
-                            </p>
-                        </div>
-                    </form>
+                    {formContent}
                 </CardContent>
             </Card>
         </motion.div>

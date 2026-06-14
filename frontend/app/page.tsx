@@ -98,6 +98,16 @@ export default function Dashboard() {
     const sentCount = participantNods.filter(n => n.createdByMe).length;
     const receivedCount = participantNods.filter(n => !n.createdByMe).length;
 
+    // Calculate count of nods in each filter group for the dropdown indicator
+    const filterCounts: Record<FilterOption, number> = {
+        all: participantNods.length,
+        awaiting: participantNods.filter(n => n.status === "awaiting").length,
+        nodded: participantNods.filter(n => n.status === "nodded" || n.status === "delivered" || n.status === "disputed").length,
+        completed: participantNods.filter(n => n.status === "completed").length,
+        expired: participantNods.filter(n => n.status === "expired").length,
+        declined: participantNods.filter(n => n.status === "declined").length,
+        draft: participantNods.filter(n => n.status === "draft").length,
+    };
 
     return (
         <div className="space-y-6">
@@ -132,7 +142,7 @@ export default function Dashboard() {
 
             {/* Filters */}
             <Suspense fallback={<div className="h-10 flex gap-2">{[...Array(5)].map((_, i) => <div key={i} className="w-20 h-9 bg-[var(--accent)] rounded-lg animate-pulse" />)}</div>}>
-                <FilterPills activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+                <FilterPills activeFilter={activeFilter} onFilterChange={setActiveFilter} counts={filterCounts} />
             </Suspense>
 
             {/* Cards Grid */}

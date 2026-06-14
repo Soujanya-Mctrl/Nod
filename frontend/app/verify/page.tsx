@@ -17,9 +17,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProfileName } from "@/components/nod/profile-name";
-import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, type NodStatus } from "@/components/nod/status-badge";
-import { cn, generateHash, truncateHash } from "@/lib/utils";
+import { cn, truncateHash } from "@/lib/utils";
+
 
 import { useNods, type Nod } from "@/lib/store";
 
@@ -32,18 +32,12 @@ export default function VerifyPage() {
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     // Verification state
-    const [verifyMode, setVerifyMode] = useState<"hash" | "content">("hash");
     const [verifyHash, setVerifyHash] = useState("");
-    const [verifyText, setVerifyText] = useState("");
-    const [verifyInitiator, setVerifyInitiator] = useState("");
-    const [verifyTimestamp, setVerifyTimestamp] = useState("");
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationResult, setVerificationResult] = useState<{
         found: boolean;
         nod?: Nod;
-        method?: 'transaction' | 'content' | 'recomputed';
-        computedHash?: string;
-        hashMatch?: boolean;
+        method?: 'transaction' | 'content';
     } | null>(null);
 
     const filteredNods = useMemo(() => {
@@ -84,11 +78,7 @@ export default function VerifyPage() {
 
     const handleVerificationSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (verifyMode === "hash") {
-            performHashVerification(verifyHash);
-        } else {
-            performContentVerification();
-        }
+        performHashVerification(verifyHash);
     };
 
     const performHashVerification = async (hashToVerify: string) => {
@@ -99,33 +89,13 @@ export default function VerifyPage() {
 
         const cleanHash = hashToVerify.trim();
         const foundViaTx = onChainNods.find(n => n.transactionHash === cleanHash);
-        const foundViaContent = onChainNods.find(n => n.hash === cleanHash);
+        const foundViaContent = onChainNods.find(n => n.hash === cleanHash || n.cid === cleanHash);
         const found = foundViaTx || foundViaContent;
 
         setVerificationResult({
             found: !!found,
             nod: found,
             method: foundViaTx ? 'transaction' : (foundViaContent ? 'content' : undefined)
-        });
-        setIsVerifying(false);
-    };
-
-    const performContentVerification = async () => {
-        if (!verifyText.trim() || !verifyInitiator.trim() || !verifyTimestamp.trim()) return;
-
-        setIsVerifying(true);
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        const preimage = `${verifyText.trim()}|${verifyInitiator.trim()}|${verifyTimestamp.trim()}`;
-        const computedHash = await generateHash(preimage);
-        const foundViaContent = onChainNods.find(n => n.hash === computedHash);
-
-        setVerificationResult({
-            found: !!foundViaContent,
-            nod: foundViaContent,
-            method: 'recomputed',
-            computedHash,
-            hashMatch: !!foundViaContent
         });
         setIsVerifying(false);
     };
@@ -169,104 +139,41 @@ export default function VerifyPage() {
                                     Verify an Agreement
                                 </h3>
                                 <p className="text-xs text-[var(--foreground-muted)] mt-1">
-                                    Look up by hash, or recompute the SHA-256 content hash from agreement data.
+                                    Enter a transaction hash or IPFS CID (Content Hash) to verify its status on the registry.
                                 </p>
                             </div>
                         </div>
 
-                        {/* Mode Tabs */}
-                        <div className="flex gap-1 bg-[var(--accent)] p-1 rounded-lg">
-                            <button
-                                onClick={() => { setVerifyMode("hash"); setVerificationResult(null); }}
-                                className={cn(
-                                    "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                                    verifyMode === "hash"
-                                        ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm"
-                                        : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
-                                )}
-                            >
-                                🔍 Lookup by Hash
-                            </button>
-                            <button
-                                onClick={() => { setVerifyMode("content"); setVerificationResult(null); }}
-                                className={cn(
-                                    "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                                    verifyMode === "content"
-                                        ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm"
-                                        : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
-                                )}
-                            >
-                                🔐 Recompute SHA-256
-                            </button>
-                        </div>
-
                         {/* Verification Form */}
                         <form onSubmit={handleVerificationSubmit} className="space-y-4">
-                            {verifyMode === "hash" ? (
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-[var(--foreground)]">Transaction Hash or Content Hash</label>
-                                    <Input
-                                        placeholder="0x... or paste a full transaction hash"
-                                        value={verifyHash}
-                                        onChange={(e) => { setVerifyHash(e.target.value); setVerificationResult(null); }}
-                                        className="font-mono text-sm"
-                                    />
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-[var(--foreground)]">Agreement Text</label>
-                                        <Textarea
-                                            placeholder="Paste the exact agreement text..."
-                                            value={verifyText}
-                                            onChange={(e) => { setVerifyText(e.target.value); setVerificationResult(null); }}
-                                            className="text-sm min-h-[80px]"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-[var(--foreground)]">Initiator Address / Username</label>
-                                            <Input
-                                                placeholder="G... or username"
-                                                value={verifyInitiator}
-                                                onChange={(e) => { setVerifyInitiator(e.target.value); setVerificationResult(null); }}
-                                                className="font-mono text-sm"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-[var(--foreground)]">Created At (Date String)</label>
-                                            <Input
-                                                placeholder="e.g. 6/13/2026"
-                                                value={verifyTimestamp}
-                                                onChange={(e) => { setVerifyTimestamp(e.target.value); setVerificationResult(null); }}
-                                                className="text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-[var(--foreground-muted)]">
-                                        Preimage formula: <code className="font-mono bg-[var(--accent)] px-1 rounded">SHA-256(text|initiator|createdAt)</code>
-                                    </p>
-                                </div>
-                            )}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-[var(--foreground)]">Transaction Hash or IPFS CID (Content Hash)</label>
+                                <Input
+                                    placeholder="e.g. Qm... or 0x... / transaction hash"
+                                    value={verifyHash}
+                                    onChange={(e) => { setVerifyHash(e.target.value); setVerificationResult(null); }}
+                                    className="font-mono text-sm"
+                                />
+                            </div>
 
                             <Button
                                 type="submit"
-                                disabled={isVerifying || (verifyMode === "hash" ? !verifyHash.trim() : !verifyText.trim() || !verifyInitiator.trim() || !verifyTimestamp.trim())}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                                disabled={isVerifying || !verifyHash.trim()}
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
                             >
                                 {isVerifying ? (
                                     <div className="flex items-center gap-2">
                                         <motion.div
                                             animate={{ rotate: 360 }}
                                             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                            className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                                            className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
                                         />
-                                        {verifyMode === "hash" ? "Searching registry..." : "Computing SHA-256 & matching..."}
+                                        Searching registry...
                                     </div>
                                 ) : (
                                     <>
                                         <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 mr-2" />
-                                        {verifyMode === "hash" ? "Verify Hash" : "Compute & Verify"}
+                                        Verify Hash
                                     </>
                                 )}
                             </Button>
@@ -281,16 +188,6 @@ export default function VerifyPage() {
                                     exit={{ opacity: 0, y: -10 }}
                                     className="space-y-3"
                                 >
-                                    {/* Computed hash display for content mode */}
-                                    {verificationResult.method === 'recomputed' && verificationResult.computedHash && (
-                                        <div className="p-3 rounded-lg bg-[var(--accent)] border border-[var(--border)] space-y-1.5">
-                                            <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider">Computed SHA-256</span>
-                                            <code className="block text-xs font-mono text-[var(--foreground)] break-all select-all">
-                                                {verificationResult.computedHash}
-                                            </code>
-                                        </div>
-                                    )}
-
                                     {/* Result banner */}
                                     <div className={`p-4 rounded-lg border ${verificationResult.found ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"}`}>
                                         <div className="flex items-center gap-2.5">
@@ -304,7 +201,7 @@ export default function VerifyPage() {
                                                 </span>
                                                 {verificationResult.method && (
                                                     <span className="text-[10px] text-[var(--foreground-muted)] block mt-0.5">
-                                                        Matched via {verificationResult.method === 'transaction' ? 'transaction hash' : verificationResult.method === 'content' ? 'content hash' : 'SHA-256 recomputation'}
+                                                        Matched via {verificationResult.method === 'transaction' ? 'transaction hash' : 'IPFS CID (Content Hash)'}
                                                     </span>
                                                 )}
                                             </div>

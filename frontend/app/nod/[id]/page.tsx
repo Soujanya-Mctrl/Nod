@@ -64,11 +64,12 @@ export default function NodDetailPage() {
     const [timeLeft, setTimeLeft] = useState<string>("");
     const [isExpired, setIsExpired] = useState(false);
     const [showVerifyGuide, setShowVerifyGuide] = useState(false);
+    const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
     // Live verification states
     const [verifyStep, setVerifyStep] = useState<0 | 1 | 2 | 3>(0);
     const [isVerifyRunning, setIsVerifyRunning] = useState(false);
-    const [hashCheck, setHashCheck] = useState<{ passed: boolean; computed: string; expected: string } | null>(null);
+    const [contentCheck, setContentCheck] = useState<{ passed: boolean; ipfsText: string; expectedText: string } | null>(null);
     const [ipfsCheck, setIpfsCheck] = useState<{ passed: boolean; data: Record<string, unknown> | null; error?: string } | null>(null);
     const [contractCheck, setContractCheck] = useState<{ passed: boolean; data: OnChainAgreement | null; error?: string } | null>(null);
     
@@ -78,7 +79,7 @@ export default function NodDetailPage() {
     const [agreementIdHex, setAgreementIdHex] = useState<string>("");
 
     const toast = useToast();
-    const { address, isConnected, connect } = useStellarWallet();
+    const { address, isConnected, connect, isInitializing } = useStellarWallet();
 
     // Load draft info from backend if signatures/agreement ID are not present locally
     useEffect(() => {
@@ -100,9 +101,11 @@ export default function NodDetailPage() {
             });
     }, [nod, nodId, isLoaded]);
 
+    const isLoadingProfile = isInitializing || (address !== null && userProfile === null);
+
     // Check if user has access (participant or verified hash)
     useEffect(() => {
-        if (!nod || !isLoaded) return;
+        if (!nod || !isLoaded || isLoadingProfile) return;
 
         if (isParticipant(nod)) {
             setHasAccess(true);
@@ -116,7 +119,7 @@ export default function NodDetailPage() {
         }
 
         setHasAccess(false);
-    }, [nod, nodId, isLoaded, isParticipant, userProfile, address]);
+    }, [nod, nodId, isLoaded, isParticipant, userProfile, address, isLoadingProfile]);
 
     // Expiry and Review Window timer countdown
     useEffect(() => {
@@ -167,7 +170,7 @@ export default function NodDetailPage() {
         return () => clearInterval(interval);
     }, [nod]);
 
-    if (!isLoaded) {
+    if (!isLoaded || isLoadingProfile) {
         return (
             <div className="max-w-2xl mx-auto space-y-6 pt-10">
                 <div className="h-6 w-32 bg-[var(--accent)] rounded animate-pulse" />
@@ -542,7 +545,7 @@ export default function NodDetailPage() {
         }
     };
 
-    // Show hash verification modal if user doesn't have access
+    // Show access gate if user doesn't have access
     if (!hasAccess) {
         return (
             <div className="max-w-2xl mx-auto space-y-6">
@@ -553,11 +556,74 @@ export default function NodDetailPage() {
                     </Link>
                 </Button>
 
-                <HashVerificationModal
-                    expectedHash={nod.hash}
-                    nodId={nodId}
-                    onVerified={() => setHasAccess(true)}
-                />
+                {!isConnected ? (
+                    <Card className="border-2 overflow-hidden shadow-xl">
+                        <CardHeader className="text-center pb-2 bg-[var(--accent)]/10">
+                            <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-4 border border-amber-200">
+                                <span className="text-4xl">🔒</span>
+                            </div>
+                            <CardTitle className="text-xl font-bold tracking-tight">Private Agreement Access</CardTitle>
+                            <CardDescription>
+                                To view this agreement, please connect your wallet or enter the sealed content hash.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-[var(--border)]">
+                                {/* Option 1: Participant */}
+                                <div className="space-y-4 pb-6 md:pb-0 md:pr-6 flex flex-col justify-between">
+                                    <div className="space-y-2">
+                                        <h3 className="text-sm font-bold flex items-center gap-2">
+                                            <span className="text-lg">🤝</span>
+                                            <span>Agreement Participant</span>
+                                        </h3>
+                                        <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
+                                            Are you the initiator, a co-signer, or the arbitrator? Connect your Freighter wallet to automatically unlock and view the agreement details.
+                                        </p>
+                                    </div>
+                                    <Button 
+                                        onClick={connect} 
+                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold mt-4"
+                                    >
+                                        Connect Freighter Wallet
+                                    </Button>
+                                </div>
+
+                                {/* Option 2: Third-Party */}
+                                <div className="space-y-4 pt-6 md:pt-0 md:pl-6">
+                                    <div className="space-y-2">
+                                        <h3 className="text-sm font-bold flex items-center gap-2">
+                                            <span className="text-lg">🔍</span>
+                                            <span>Third-Party Verifier</span>
+                                        </h3>
+                                        <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
+                                            If you are a third party checking this agreement, you must enter the sealed content hash to view details.
+                                        </p>
+                                    </div>
+                                    <HashVerificationModal
+                                        expectedHash={nod.hash}
+                                        nodId={nodId}
+                                        onVerified={() => setHasAccess(true)}
+                                        isInline
+                                    />
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-600 flex items-center gap-2.5">
+                            <HugeiconsIcon icon={Alert01Icon} className="w-4.5 h-4.5 shrink-0" />
+                            <span>
+                                Connected wallet <strong>{address?.slice(0, 8)}...{address?.slice(-4)}</strong> is not registered as a participant on this agreement. Enter the sealed content hash to view/verify.
+                            </span>
+                        </div>
+                        <HashVerificationModal
+                            expectedHash={nod.hash}
+                            nodId={nodId}
+                            onVerified={() => setHasAccess(true)}
+                        />
+                    </div>
+                )}
             </div>
         );
     }
@@ -565,12 +631,12 @@ export default function NodDetailPage() {
     const templateConfig = TEMPLATES.find((t) => t.id === (nod as any).template) || 
         (nod.cautionAmount && nod.cautionAmount > 0 ? TEMPLATES[0] : TEMPLATES[1]);
 
-    const isUserCounterparty = nod.counterparties.map(c => c.toLowerCase()).includes(address?.toLowerCase() || "");
-    const isUserInitiator = nod.creator.toLowerCase() === address?.toLowerCase();
-    const isUserArbitrator = nod.arbitrator && address && nod.arbitrator.toLowerCase() === address.toLowerCase();
+    const isUserCounterparty = address ? nod.counterparties.includes(address) : false;
+    const isUserInitiator = address ? nod.creator === address : false;
+    const isUserArbitrator = !!(nod.arbitrator && address && nod.arbitrator === address);
 
-    const hasUserSignedDraft = draftSignedCounterparties.map(c => c.toLowerCase()).includes(address?.toLowerCase() || "");
-    const hasUserApprovedCompletion = (nod.completedParties || []).map(c => c.toLowerCase()).includes(address?.toLowerCase() || "");
+    const hasUserSignedDraft = address ? draftSignedCounterparties.includes(address) : false;
+    const hasUserApprovedCompletion = address ? (nod.completedParties || []).includes(address) : false;
 
     return (
         <div className="max-w-2xl mx-auto space-y-6">
@@ -695,7 +761,7 @@ export default function NodDetailPage() {
                                     </div>
 
                                     {nod.counterparties.map((cp) => {
-                                        const signed = draftSignedCounterparties.map(c => c.toLowerCase()).includes(cp.toLowerCase());
+                                        const signed = draftSignedCounterparties.includes(cp);
                                         return (
                                             <div key={cp} className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-[var(--accent)] border border-[var(--border)]">
                                                 <ProfileName username={cp} />
@@ -726,7 +792,7 @@ export default function NodDetailPage() {
                                             <ProfileName username={nod.creator} />
                                             <span className="text-[10px] bg-[var(--border-strong)]/20 text-[var(--foreground-muted)] px-1.5 py-0.5 rounded">Initiator</span>
                                         </div>
-                                        {(nod.completedParties || []).map(c => c.toLowerCase()).includes(nod.creator.toLowerCase()) ? (
+                                        {(nod.completedParties || []).includes(nod.creator) ? (
                                             <span className="text-emerald-500 font-semibold flex items-center gap-1">
                                                 Approved <HugeiconsIcon icon={CheckmarkCircle01Icon} className="w-4 h-4" />
                                             </span>
@@ -739,7 +805,7 @@ export default function NodDetailPage() {
 
                                     {/* Counterparties Completion */}
                                     {nod.counterparties.map((cp) => {
-                                        const completed = (nod.completedParties || []).map(c => c.toLowerCase()).includes(cp.toLowerCase());
+                                        const completed = (nod.completedParties || []).includes(cp);
                                         return (
                                             <div key={cp} className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-[var(--accent)] border border-[var(--border)]">
                                                 <ProfileName username={cp} />
@@ -939,7 +1005,12 @@ export default function NodDetailPage() {
             {/* Live Third-Party Verification Card */}
             <Card className="border-[var(--border)] shadow-md overflow-hidden">
                 <button
-                    onClick={() => setShowVerifyGuide(!showVerifyGuide)}
+                    onClick={() => {
+                        setShowVerifyGuide(!showVerifyGuide);
+                        if (showVerifyGuide) {
+                            setShowTechnicalDetails(false);
+                        }
+                    }}
                     className="w-full px-5 py-4 flex items-center justify-between hover:bg-[var(--accent)]/30 transition-colors"
                 >
                     <div className="flex items-center gap-2.5">
@@ -947,8 +1018,8 @@ export default function NodDetailPage() {
                             <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 text-emerald-600" />
                         </div>
                         <div className="text-left">
-                            <span className="text-sm font-bold text-[var(--foreground)] block">Third-Party Verification</span>
-                            <span className="text-[10px] text-emerald-600 font-medium">Live Hash · IPFS · Soroban Checks</span>
+                            <span className="text-sm font-bold text-[var(--foreground)] block">Verify Agreement Authenticity</span>
+                            <span className="text-[10px] text-emerald-600 font-medium">Verify content integrity & blockchain status</span>
                         </div>
                     </div>
                     <span className="text-xs text-[var(--foreground-muted)]">
@@ -966,7 +1037,7 @@ export default function NodDetailPage() {
                         >
                             <CardContent className="px-5 pb-5 pt-2 border-t border-[var(--border)]/40 space-y-5">
                                 <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
-                                    Independently verify this agreement without trusting this app. Each check queries a different source — SHA-256, IPFS, and the Soroban contract on Stellar Testnet.
+                                    Independently verify that this agreement has not been altered or tampered with since it was signed. This runs automated checks comparing the text structure, storage records, and live blockchain status.
                                 </p>
 
                                 {/* Run All Checks button */}
@@ -974,59 +1045,66 @@ export default function NodDetailPage() {
                                     <Button
                                         onClick={async () => {
                                             setIsVerifyRunning(true);
-                                            setHashCheck(null);
+                                            setContentCheck(null);
                                             setIpfsCheck(null);
                                             setContractCheck(null);
 
-                                            // Step 1: Hash recomputation
+                                            // Step 1: Soroban contract query
                                             setVerifyStep(1);
-                                            try {
-                                                const preimage = `${nod.text}|${nod.creator}|${nod.createdAt}`;
-                                                const computed = await generateHash(preimage);
-                                                setHashCheck({ passed: computed === nod.hash, computed, expected: nod.hash });
-                                            } catch {
-                                                setHashCheck({ passed: false, computed: "error", expected: nod.hash });
-                                            }
-                                            await new Promise(r => setTimeout(r, 600));
-
-                                            // Step 2: IPFS fetch
-                                            setVerifyStep(2);
-                                            try {
-                                                if (nod.cid && !nod.cid.startsWith("MOCK_CID_")) {
-                                                    const data = await fetchIPFSContent(nod.cid);
-                                                    setIpfsCheck({ passed: !!data, data });
-                                                } else {
-                                                    setIpfsCheck({ passed: false, data: null, error: nod.cid?.startsWith("MOCK_CID_") ? "Mock CID — IPFS not pinned (Pinata JWT not configured)" : "No CID available" });
-                                                }
-                                            } catch {
-                                                setIpfsCheck({ passed: false, data: null, error: "Failed to reach IPFS gateway" });
-                                            }
-                                            await new Promise(r => setTimeout(r, 400));
-
-                                            // Step 3: Soroban contract query
-                                            setVerifyStep(3);
+                                            let onChainCid = nod.cid;
+                                            let contractData: OnChainAgreement | null = null;
                                             try {
                                                 if (agreementIdHex) {
-                                                    const data = await queryAgreementOnChain(agreementIdHex);
-                                                    setContractCheck({ passed: !!data, data });
+                                                    contractData = await queryAgreementOnChain(agreementIdHex);
+                                                    setContractCheck({ passed: !!contractData, data: contractData });
+                                                    if (contractData?.cid) {
+                                                        onChainCid = contractData.cid;
+                                                    }
                                                 } else {
                                                     setContractCheck({ passed: false, data: null, error: "No agreement ID — not yet sealed on-chain" });
                                                 }
                                             } catch {
                                                 setContractCheck({ passed: false, data: null, error: "RPC query failed" });
                                             }
+                                            await new Promise(r => setTimeout(r, 600));
+
+                                            // Step 2: IPFS fetch
+                                            setVerifyStep(2);
+                                            let ipfsContent: Record<string, any> | null = null;
+                                            try {
+                                                if (onChainCid && !onChainCid.startsWith("MOCK_CID_")) {
+                                                    ipfsContent = await fetchIPFSContent(onChainCid) as Record<string, any>;
+                                                    setIpfsCheck({ passed: !!ipfsContent, data: ipfsContent });
+                                                } else {
+                                                    setIpfsCheck({ passed: false, data: null, error: onChainCid?.startsWith("MOCK_CID_") ? "Mock CID — IPFS not pinned" : "No CID available" });
+                                                }
+                                            } catch {
+                                                setIpfsCheck({ passed: false, data: null, error: "Failed to reach IPFS gateway" });
+                                            }
+                                            await new Promise(r => setTimeout(r, 600));
+
+                                            // Step 3: Content Match
+                                            setVerifyStep(3);
+                                            try {
+                                                const ipfsText = ipfsContent?.text || "";
+                                                const expectedText = nod.text || "";
+                                                const textMatch = ipfsText.trim() === expectedText.trim();
+                                                setContentCheck({ passed: textMatch, ipfsText, expectedText });
+                                            } catch {
+                                                setContentCheck({ passed: false, ipfsText: "", expectedText: nod.text });
+                                            }
 
                                             setIsVerifyRunning(false);
                                         }}
                                         disabled={isVerifyRunning}
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
                                     >
                                         <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 mr-2" />
-                                        Run All Verification Checks
+                                        Run Authenticity Checks
                                     </Button>
                                 )}
 
-                                {/* Check 1: Hash Recomputation */}
+                                {/* Check 1: Blockchain State Check */}
                                 {verifyStep >= 1 && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 10 }}
@@ -1035,40 +1113,26 @@ export default function NodDetailPage() {
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">1</div>
-                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">SHA-256 Content Hash</h4>
-                                            {hashCheck && (
+                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Blockchain State Check</h4>
+                                            {contractCheck && (
                                                 <HugeiconsIcon
-                                                    icon={hashCheck.passed ? CheckmarkCircle01Icon : CancelCircleIcon}
-                                                    className={`w-4 h-4 ${hashCheck.passed ? "text-emerald-500" : "text-rose-500"}`}
+                                                    icon={contractCheck.passed ? CheckmarkCircle01Icon : CancelCircleIcon}
+                                                    className={`w-4 h-4 ${contractCheck.passed ? "text-emerald-500" : "text-amber-500"}`}
                                                 />
                                             )}
-                                            {!hashCheck && verifyStep === 1 && (
-                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full" />
+                                            {!contractCheck && verifyStep === 1 && (
+                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
                                             )}
                                         </div>
-                                        {hashCheck && (
-                                            <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${hashCheck.passed ? "bg-emerald-500/5 border-emerald-500/15" : "bg-rose-500/5 border-rose-500/15"}`}>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Preimage: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{nod.text}|{nod.creator}|{nod.createdAt}</code>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Computed: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{hashCheck.computed}</code>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Expected: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{hashCheck.expected}</code>
-                                                </div>
-                                                <p className={`text-[10px] font-semibold ${hashCheck.passed ? "text-emerald-600" : "text-rose-500"}`}>
-                                                    {hashCheck.passed ? "✓ Hashes match — content has not been tampered with" : "✗ Hash mismatch — content may have been altered"}
-                                                </p>
+                                        {contractCheck && (
+                                            <div className={`p-3 rounded-lg border text-xs ${contractCheck.passed ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-600" : "bg-amber-500/5 border-amber-500/15 text-amber-600"} font-semibold`}>
+                                                {contractCheck.passed ? `✓ Verified: Active contract confirmed on Stellar Blockchain (${contractCheck.data?.statusLabel}).` : `⚠ Warning: ${contractCheck.error || "Blockchain check failed"}`}
                                             </div>
                                         )}
                                     </motion.div>
                                 )}
 
-                                {/* Check 2: IPFS Fetch */}
+                                {/* Check 2: Storage Verification Check */}
                                 {verifyStep >= 2 && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 10 }}
@@ -1077,7 +1141,7 @@ export default function NodDetailPage() {
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">2</div>
-                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">IPFS Content Retrieval</h4>
+                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Storage Verification Check</h4>
                                             {ipfsCheck && (
                                                 <HugeiconsIcon
                                                     icon={ipfsCheck.passed ? CheckmarkCircle01Icon : CancelCircleIcon}
@@ -1085,34 +1149,18 @@ export default function NodDetailPage() {
                                                 />
                                             )}
                                             {!ipfsCheck && verifyStep === 2 && (
-                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full" />
+                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
                                             )}
                                         </div>
                                         {ipfsCheck && (
-                                            <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${ipfsCheck.passed ? "bg-emerald-500/5 border-emerald-500/15" : "bg-amber-500/5 border-amber-500/15"}`}>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">CID: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{nod.cid || "N/A"}</code>
-                                                </div>
-                                                {ipfsCheck.passed && ipfsCheck.data ? (
-                                                    <>
-                                                        <div>
-                                                            <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Retrieved JSON keys: </span>
-                                                            <code className="font-mono text-[10px] text-[var(--foreground)]">{Object.keys(ipfsCheck.data).join(", ")}</code>
-                                                        </div>
-                                                        <p className="text-[10px] font-semibold text-emerald-600">✓ IPFS record exists and is retrievable</p>
-                                                    </>
-                                                ) : (
-                                                    <p className="text-[10px] font-semibold text-amber-600">
-                                                        ⚠ {ipfsCheck.error || "Could not retrieve IPFS content"}
-                                                    </p>
-                                                )}
+                                            <div className={`p-3 rounded-lg border text-xs ${ipfsCheck.passed ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-600" : "bg-amber-500/5 border-amber-500/15 text-amber-600"} font-semibold`}>
+                                                {ipfsCheck.passed ? "✓ Verified: Agreement terms are securely backed up in decentralized storage." : `⚠ Warning: ${ipfsCheck.error || "Storage check failed"}`}
                                             </div>
                                         )}
                                     </motion.div>
                                 )}
 
-                                {/* Check 3: Soroban Contract Query */}
+                                {/* Check 3: Content Integrity Check */}
                                 {verifyStep >= 3 && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 10 }}
@@ -1121,57 +1169,82 @@ export default function NodDetailPage() {
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">3</div>
-                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Soroban Contract State</h4>
-                                            {contractCheck && (
+                                            <h4 className="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">Content Integrity Check</h4>
+                                            {contentCheck && (
                                                 <HugeiconsIcon
-                                                    icon={contractCheck.passed ? CheckmarkCircle01Icon : CancelCircleIcon}
-                                                    className={`w-4 h-4 ${contractCheck.passed ? "text-emerald-500" : "text-amber-500"}`}
+                                                    icon={contentCheck.passed ? CheckmarkCircle01Icon : CancelCircleIcon}
+                                                    className={`w-4 h-4 ${contentCheck.passed ? "text-emerald-500" : "text-rose-500"}`}
                                                 />
                                             )}
-                                            {!contractCheck && verifyStep === 3 && (
-                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full" />
+                                            {!contentCheck && verifyStep === 3 && (
+                                                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
                                             )}
                                         </div>
-                                        {contractCheck && (
-                                            <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${contractCheck.passed ? "bg-emerald-500/5 border-emerald-500/15" : "bg-amber-500/5 border-amber-500/15"}`}>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Contract: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{CONTRACT_ID}</code>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium">Agreement ID: </span>
-                                                    <code className="font-mono text-[10px] text-[var(--foreground)] break-all">{agreementIdHex || "N/A"}</code>
-                                                </div>
-                                                {contractCheck.passed && contractCheck.data ? (
-                                                    <>
-                                                        <div className="grid grid-cols-2 gap-2 pt-1">
-                                                            <div>
-                                                                <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">On-Chain Status</span>
-                                                                <span className="text-[10px] font-semibold text-[var(--foreground)]">{contractCheck.data.statusLabel}</span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Escrow (stroops)</span>
-                                                                <span className="text-[10px] font-semibold text-[var(--foreground)]">{contractCheck.data.cautionAmount.toString()}</span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Initiator</span>
-                                                                <code className="text-[10px] font-mono text-[var(--foreground)] break-all">{contractCheck.data.initiator.slice(0, 8)}...{contractCheck.data.initiator.slice(-4)}</code>
-                                                            </div>
-                                                            <div>
-                                                                <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Counterparties</span>
-                                                                <span className="text-[10px] font-semibold text-[var(--foreground)]">{contractCheck.data.counterparties.length} registered</span>
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-[10px] font-semibold text-emerald-600">✓ On-chain agreement verified via Soroban RPC</p>
-                                                    </>
-                                                ) : (
-                                                    <p className="text-[10px] font-semibold text-amber-600">
-                                                        ⚠ {contractCheck.error || "Agreement not found on-chain"}
-                                                    </p>
-                                                )}
+                                        {contentCheck && (
+                                            <div className={`p-3 rounded-lg border text-xs ${contentCheck.passed ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-600" : "bg-rose-500/5 border-rose-500/15 text-rose-500"} font-semibold`}>
+                                                {contentCheck.passed ? "✓ Verified: The agreement content retrieved from decentralized storage matches the local terms exactly." : "✗ Mismatch: The agreement content does not match the local terms."}
                                             </div>
                                         )}
                                     </motion.div>
+                                )}
+
+                                {/* Collapsible Technical parameters for developers */}
+                                {(contentCheck || ipfsCheck || contractCheck) && (
+                                    <div className="border-t border-[var(--border)]/30 pt-3">
+                                        <button
+                                            onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                                            className="text-[11px] font-bold text-emerald-600 hover:underline flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <HugeiconsIcon icon={SecurityCheckIcon} className="w-3.5 h-3.5" />
+                                            <span>{showTechnicalDetails ? "Hide Technical Parameters" : "Show Technical Parameters (Developers)"}</span>
+                                        </button>
+
+                                        <AnimatePresence>
+                                            {showTechnicalDetails && (
+                                                <motion.div
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: "auto", opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    className="overflow-hidden mt-2"
+                                                >
+                                                    <div className="p-3 rounded-lg bg-[var(--accent)] border border-[var(--border)] text-[10px] text-[var(--foreground-muted)] space-y-1.5 font-mono">
+                                                        {contractCheck && (
+                                                            <>
+                                                                <div>
+                                                                    <span className="font-semibold text-[var(--foreground)]">Stellar Contract Address: </span>
+                                                                    <code className="break-all">{CONTRACT_ID}</code>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="font-semibold text-[var(--foreground)]">On-Chain Agreement ID: </span>
+                                                                    <code className="break-all">{agreementIdHex || "N/A"}</code>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        {ipfsCheck && (
+                                                            <>
+                                                                <div>
+                                                                    <span className="font-semibold text-[var(--foreground)]">IPFS CID: </span>
+                                                                    <code className="break-all">{nod.cid || "N/A"}</code>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                        {contentCheck && (
+                                                            <>
+                                                                <div>
+                                                                    <span className="font-semibold text-[var(--foreground)]">Expected Content: </span>
+                                                                    <code className="break-all">"{contentCheck.expectedText}"</code>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="font-semibold text-[var(--foreground)]">IPFS Content: </span>
+                                                                    <code className="break-all">"{contentCheck.ipfsText}"</code>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
                                 )}
 
                                 {/* Reset */}
@@ -1182,11 +1255,12 @@ export default function NodDetailPage() {
                                             size="sm"
                                             onClick={() => {
                                                 setVerifyStep(0);
-                                                setHashCheck(null);
+                                                setContentCheck(null);
                                                 setIpfsCheck(null);
                                                 setContractCheck(null);
+                                                setShowTechnicalDetails(false);
                                             }}
-                                            className="text-xs text-[var(--foreground-muted)]"
+                                            className="text-xs text-[var(--foreground-muted)] cursor-pointer"
                                         >
                                             Run Again
                                         </Button>
