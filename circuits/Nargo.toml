@@ -1,7 +1,8 @@
 [package]
-name = "nod_circuit"
+name = "nod_circuits"
 type = "bin"
 authors = ["Antigravity"]
-compiler_version = ">=0.31.0"
+compiler_version = ">=0.30.0"
 
 [dependencies]
+std = { git = "https://github.com/noir-lang/noir", directory = "crates/std" }

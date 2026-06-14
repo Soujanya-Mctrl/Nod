@@ -3,7 +3,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
-export type FilterOption = "all" | "awaiting" | "nodded" | "declined" | "draft";
+export type FilterOption = "all" | "awaiting" | "nodded" | "completed" | "expired" | "declined" | "draft";
 
 interface FilterPillsProps {
     activeFilter: FilterOption;
@@ -14,7 +14,9 @@ export function FilterPills({ activeFilter, onFilterChange }: FilterPillsProps) 
     const filters: { value: FilterOption; label: string }[] = [
         { value: "all", label: "All" },
         { value: "awaiting", label: "Awaiting" },
-        { value: "nodded", label: "Nodded" },
+        { value: "nodded", label: "Active" },
+        { value: "completed", label: "Completed" },
+        { value: "expired", label: "Expired" },
         { value: "declined", label: "Declined" },
         { value: "draft", label: "Drafts" },
     ];

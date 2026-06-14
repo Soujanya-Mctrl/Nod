@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Web3Provider } from "@/components/providers/web3-provider";
+import { StellarProvider } from "@/components/providers/stellar-provider";
+import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,9 +31,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Web3Provider>
-          <AppLayout>{children}</AppLayout>
-        </Web3Provider>
+        <ToastProvider>
+          <StellarProvider>
+            <AppLayout>{children}</AppLayout>
+          </StellarProvider>
+        </ToastProvider>
       </body>
     </html>
   );

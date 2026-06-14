@@ -24,9 +24,13 @@ export function NodIdentityCard({
 }: NodIdentityCardProps) {
     const [copied, setCopied] = useState(false);
 
-    const displayId = shouldTruncate ? truncateHash(id, 6, 4) : id;
+    const hasId = !!id;
+    const displayId = hasId
+        ? (shouldTruncate ? truncateHash(id, 6, 4) : id)
+        : "Pending on-chain signature";
 
     const handleCopy = () => {
+        if (!hasId) return;
         navigator.clipboard.writeText(id);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -39,11 +43,17 @@ export function NodIdentityCard({
                 <div
                     onClick={onCardClick}
                     className={cn(
-                        "w-6 h-6 shrink-0 bg-emerald-50 rounded-lg flex items-center justify-center transition-all",
+                        "w-6 h-6 shrink-0 rounded-lg flex items-center justify-center transition-all",
+                        hasId ? "bg-emerald-50" : "bg-amber-50",
                         onCardClick && "cursor-pointer hover:bg-emerald-100 active:scale-95"
                     )}
                 >
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)] animate-pulse" />
+                    <div className={cn(
+                        "w-1.5 h-1.5 rounded-full",
+                        hasId
+                            ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)] animate-pulse"
+                            : "bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
+                    )} />
                 </div>
 
                 {/* Middle Section - ID Information */}
@@ -58,45 +68,50 @@ export function NodIdentityCard({
                         {label}
                     </p>
                     <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[11px] font-semibold text-gray-800 truncate">
+                        <span className={cn(
+                            "font-mono text-[11px] truncate",
+                            hasId ? "font-semibold text-gray-800" : "text-gray-400 italic font-normal"
+                        )}>
                             {displayId}
                         </span>
                     </div>
                 </div>
 
                 {/* Right Section - Copy Button */}
-                <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleCopy}
-                    className="w-7 h-7 shrink-0 bg-gray-50 hover:bg-emerald-50 rounded-lg border border-gray-100 flex items-center justify-center transition-all group/copy"
-                    title="Copy to clipboard"
-                    aria-label="Copy hash"
-                >
-                    <AnimatePresence mode="wait" initial={false}>
-                        {copied ? (
-                            <motion.div
-                                key="check"
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0.5, opacity: 0 }}
-                                transition={{ duration: 0.1 }}
-                            >
-                                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="copy"
-                                initial={{ scale: 0.5, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0.5, opacity: 0 }}
-                                transition={{ duration: 0.1 }}
-                            >
-                                <Copy className="w-3.5 h-3.5 text-gray-400 group-hover/copy:text-emerald-600 transition-colors" />
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </motion.button>
+                {hasId && (
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleCopy}
+                        className="w-7 h-7 shrink-0 bg-gray-50 hover:bg-emerald-50 rounded-lg border border-gray-100 flex items-center justify-center transition-all group/copy"
+                        title="Copy to clipboard"
+                        aria-label="Copy hash"
+                    >
+                        <AnimatePresence mode="wait" initial={false}>
+                            {copied ? (
+                                <motion.div
+                                    key="check"
+                                    initial={{ scale: 0.5, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={{ scale: 0.5, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                >
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                </motion.div>
+                            ) : (
+                                <motion.div
+                                    key="copy"
+                                    initial={{ scale: 0.5, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={{ scale: 0.5, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                >
+                                    <Copy className="w-3.5 h-3.5 text-gray-400 group-hover/copy:text-emerald-600 transition-colors" />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </motion.button>
+                )}
             </div>
         </div>
     );

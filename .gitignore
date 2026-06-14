@@ -19,3 +19,12 @@ contracts/broadcast/
 contracts/artifacts/
 contracts/cache_hardhat/
 contracts/typechain-types/
+
+# Cargo build targets
+target/
+target_cli/
+target_cli_temp/
+**/target/
+
+# Helper scripts
+frontend/scripts/

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useAccount, useDisconnect } from 'wagmi';
+import { useStellarWallet } from '@/components/providers/stellar-provider';
 
-export type NodStatus = 'awaiting' | 'nodded' | 'declined';
+export type NodStatus = 'draft' | 'awaiting' | 'nodded' | 'declined' | 'completed' | 'expired' | 'delivered' | 'disputed';
 
 export interface Nod {
     id: string;
@@ -13,12 +13,20 @@ export interface Nod {
     transactionHash: string;
     creator: string;
     counterparty: string;
+    counterparties: string[];
     status: NodStatus;
     createdAt: string;
     timestamp: string;
     createdByMe: boolean;
     expiresAt?: number;
     nonce?: number;
+    tokenAddress?: string;
+    cautionAmount?: number;
+    completedParties?: string[];
+    agreementIdHex?: string;
+    signedCounterparties?: string[];
+    arbitrator?: string;
+    deliveredAt?: number;
 }
 
 export interface Profile {
@@ -36,6 +44,7 @@ interface UseNodsReturn {
     isLoaded: boolean;
     addNod: (newNod: Nod) => void;
     updateNodStatus: (id: string, newStatus: NodStatus) => void;
+    updateNod: (id: string, updatedFields: Partial<Nod>) => void;
     updateProfile: (newProfile: Profile) => void;
     checkUsernameAvailability: (username: string) => boolean;
     connectWallet: () => void;
@@ -47,7 +56,7 @@ interface UseNodsReturn {
 
 const INITIAL_NODS: Nod[] = [];
 
-const STORAGE_KEY = 'nod_app_data_v6';
+const STORAGE_KEY = 'nod_app_data_v7';
 
 export function useNods(): UseNodsReturn {
     const [nods, setNods] = useState<Nod[]>([]);
@@ -55,12 +64,11 @@ export function useNods(): UseNodsReturn {
     const [knownProfiles, setKnownProfiles] = useState<Record<string, Profile>>({});
     const [isLoaded, setIsLoaded] = useState(false);
 
-    const { address, isConnected } = useAccount();
-    const { disconnect } = useDisconnect();
+    const { address, isConnected, connect, disconnect } = useStellarWallet();
 
     useEffect(() => {
         // Clear old storage keys to ensure fresh data
-        const oldKeys = ['nod_app_data_v1', 'nod_app_data_v2', 'nod_app_data_v3', 'nod_app_data_v4', 'nod_app_data_v5'];
+        const oldKeys = ['nod_app_data_v1', 'nod_app_data_v2', 'nod_app_data_v3', 'nod_app_data_v4', 'nod_app_data_v5', 'nod_app_data_v6'];
         oldKeys.forEach(key => localStorage.removeItem(key));
 
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -123,12 +131,16 @@ export function useNods(): UseNodsReturn {
         saveToStorage(updatedNods);
     };
 
-    const updateNodStatus = (id: string, newStatus: NodStatus) => {
+    const updateNod = (id: string, updatedFields: Partial<Nod>) => {
         const updatedNods = nods.map(nod =>
-            nod.id === id ? { ...nod, status: newStatus } : nod
+            nod.id === id ? { ...nod, ...updatedFields } : nod
         );
         setNods(updatedNods);
-        saveToStorage(updatedNods);
+        saveToStorage(updatedNods, knownProfiles);
+    };
+
+    const updateNodStatus = (id: string, newStatus: NodStatus) => {
+        updateNod(id, { status: newStatus });
     };
 
     const disconnectWallet = () => {
@@ -165,31 +177,59 @@ export function useNods(): UseNodsReturn {
         return Object.values(knownProfiles).find(p => p.walletAddress.toLowerCase() === identifier.toLowerCase());
     };
 
-    const getNodById = (id: string) => nods.find(n => n.id === id);
+    const mappedNods = nods.map(nod => {
+        const resolvedCounterparty = nod.counterparty || (nod.counterparties && nod.counterparties[0]) || "";
+        if (!userProfile) {
+            return {
+                ...nod,
+                counterparty: resolvedCounterparty
+            };
+        }
+        const userWallet = userProfile.walletAddress.toLowerCase();
+        const userUser = userProfile.username.toLowerCase();
+        const isCreator = nod.creator.toLowerCase() === userWallet || nod.creator.toLowerCase() === userUser;
+        return {
+            ...nod,
+            counterparty: resolvedCounterparty,
+            createdByMe: isCreator
+        };
+    });
+
+    const getNodById = (id: string) => mappedNods.find(n => n.id === id);
 
     const isParticipant = (nod: Nod): boolean => {
         if (!userProfile) return false;
 
-        // Check by username
-        if (nod.creator === userProfile.username || nod.counterparty === userProfile.username) {
+        const creatorLower = nod.creator.toLowerCase();
+        const userUsernameLower = userProfile.username.toLowerCase();
+        const userWalletLower = userProfile.walletAddress.toLowerCase();
+
+        if (creatorLower === userUsernameLower || creatorLower === userWalletLower) {
             return true;
         }
 
-        // Check by wallet address (case-insensitive)
-        const userWallet = userProfile.walletAddress.toLowerCase();
-        return nod.creator.toLowerCase() === userWallet ||
-            nod.counterparty.toLowerCase() === userWallet;
+        if (nod.counterparties) {
+            for (const cp of nod.counterparties) {
+                const cpLower = cp.toLowerCase();
+                if (cpLower === userUsernameLower || cpLower === userWalletLower) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     };
 
     return {
-        nods,
+        nods: mappedNods,
         userProfile,
         isLoaded,
         addNod,
         updateNodStatus,
+        updateNod,
         updateProfile,
         checkUsernameAvailability,
-        connectWallet: () => { },
+        connectWallet: connect,
         disconnectWallet,
         resolveProfile,
         getNodById,

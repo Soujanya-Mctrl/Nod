@@ -24,6 +24,7 @@ export interface NodData {
     id: string;
     text: string;
     hash: string;
+    counterparties?: string[];
     counterparty: string;
     status: NodStatus;
     createdAt: string;
@@ -83,7 +84,7 @@ export function NodCard({ nod, index = 0 }: NodCardProps) {
                             <div className={cn(
                                 "w-6 h-6 rounded-md flex items-center justify-center shrink-0",
                                 isSent ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"
-                            )}>
+                              )}>
                                 <HugeiconsIcon
                                     icon={isSent ? SentIcon : InboxDownloadIcon}
                                     className="w-3.5 h-3.5"
@@ -110,7 +111,16 @@ export function NodCard({ nod, index = 0 }: NodCardProps) {
                             <HugeiconsIcon icon={User03Icon} className="w-3.5 h-3.5" />
                             <span>
                                 {isSent ? "To " : "From "}
-                                <ProfileName username={nod.counterparty} />
+                                {nod.counterparties && nod.counterparties.length > 0 ? (
+                                    nod.counterparties.map((cp, idx) => (
+                                        <React.Fragment key={cp}>
+                                            <ProfileName username={cp} />
+                                            {idx < nod.counterparties!.length - 1 && ", "}
+                                        </React.Fragment>
+                                    ))
+                                ) : (
+                                    <ProfileName username={nod.counterparty} />
+                                )}
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5">

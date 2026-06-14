@@ -50,13 +50,15 @@ function CardSkeleton() {
 const emptyStateConfig: Record<FilterOption, { icon: typeof InboxIcon; title: string; description: string }> = {
     all: { icon: InboxIcon, title: "No nods yet", description: "Create your first nod or wait for someone to send you one." },
     awaiting: { icon: Clock01Icon, title: "No pending nods", description: "No agreements waiting for a response." },
-    nodded: { icon: CheckmarkCircle01Icon, title: "No acknowledged nods", description: "No agreements have been acknowledged yet." },
+    nodded: { icon: CheckmarkCircle01Icon, title: "No active nods", description: "No active or disputed agreements on-chain." },
+    completed: { icon: CheckmarkCircle01Icon, title: "No completed nods", description: "No agreements have been completed." },
+    expired: { icon: Clock01Icon, title: "No expired nods", description: "No agreements have expired." },
     declined: { icon: Cancel01Icon, title: "No declined nods", description: "No agreements have been declined." },
     draft: { icon: InboxIcon, title: "No drafts", description: "You don't have any draft agreements." }
 };
 
 export default function Dashboard() {
-    const { nods, isLoaded } = useNods();
+    const { nods, isLoaded, isParticipant } = useNods();
     const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
 
     // Show skeletons while loading from storage
@@ -78,13 +80,23 @@ export default function Dashboard() {
         );
     }
 
-    const filteredNods = activeFilter === "all"
-        ? nods
-        : nods.filter((nod) => nod.status === activeFilter);
+    // Filter nods to only show those where the connected user is a participant
+    const participantNods = nods.filter(isParticipant);
+
+    const filteredNods = participantNods.filter((nod) => {
+        if (activeFilter === "all") return true;
+        if (activeFilter === "awaiting") return nod.status === "awaiting";
+        if (activeFilter === "nodded") return nod.status === "nodded" || nod.status === "delivered" || nod.status === "disputed";
+        if (activeFilter === "completed") return nod.status === "completed";
+        if (activeFilter === "expired") return nod.status === "expired";
+        if (activeFilter === "declined") return nod.status === "declined";
+        if (activeFilter === "draft") return nod.status === "draft";
+        return false;
+    });
 
     const emptyState = emptyStateConfig[activeFilter];
-    const sentCount = nods.filter(n => n.createdByMe).length;
-    const receivedCount = nods.filter(n => !n.createdByMe).length;
+    const sentCount = participantNods.filter(n => n.createdByMe).length;
+    const receivedCount = participantNods.filter(n => !n.createdByMe).length;
 
 
     return (

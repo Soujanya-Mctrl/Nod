@@ -3,7 +3,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
-export type NodStatus = "draft" | "awaiting" | "nodded" | "declined";
+export type NodStatus = "draft" | "awaiting" | "nodded" | "declined" | "completed" | "expired" | "delivered" | "disputed";
 
 interface StatusBadgeProps {
     status: NodStatus;
@@ -14,28 +14,51 @@ const statusConfig: Record<NodStatus, { label: string; dotColor: string; bgColor
     draft: {
         label: "Draft",
         dotColor: "bg-neutral-400",
-        bgColor: "bg-neutral-100",
+        bgColor: "bg-neutral-100/90",
         textColor: "text-neutral-600",
     },
     awaiting: {
         label: "Awaiting",
         dotColor: "bg-amber-500",
-        bgColor: "bg-amber-50",
+        bgColor: "bg-amber-50/90",
         textColor: "text-amber-700",
     },
     nodded: {
         label: "Nodded",
-        dotColor: "bg-emerald-500",
-        bgColor: "bg-emerald-50",
-        textColor: "text-emerald-700",
+        dotColor: "bg-blue-500",
+        bgColor: "bg-blue-50/90",
+        textColor: "text-blue-700",
     },
     declined: {
         label: "Declined",
-        dotColor: "bg-red-500",
-        bgColor: "bg-red-50",
-        textColor: "text-red-700",
+        dotColor: "bg-rose-500",
+        bgColor: "bg-rose-50/90",
+        textColor: "text-rose-700",
     },
-
+    completed: {
+        label: "Completed",
+        dotColor: "bg-emerald-500",
+        bgColor: "bg-emerald-50/90",
+        textColor: "text-emerald-700",
+    },
+    expired: {
+        label: "Expired",
+        dotColor: "bg-yellow-600",
+        bgColor: "bg-yellow-50/90",
+        textColor: "text-yellow-800",
+    },
+    delivered: {
+        label: "Delivered",
+        dotColor: "bg-indigo-500",
+        bgColor: "bg-indigo-50/90",
+        textColor: "text-indigo-700",
+    },
+    disputed: {
+        label: "Disputed",
+        dotColor: "bg-orange-500",
+        bgColor: "bg-orange-50/90",
+        textColor: "text-orange-700",
+    },
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

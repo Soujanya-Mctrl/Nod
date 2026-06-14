@@ -9,7 +9,8 @@ import {
     ArrowRight01Icon,
     Copy01Icon,
     Cancel01Icon,
-    GridIcon
+    GridIcon,
+    SecurityCheckIcon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -31,12 +32,18 @@ export default function VerifyPage() {
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     // Verification state
+    const [verifyMode, setVerifyMode] = useState<"hash" | "content">("hash");
     const [verifyHash, setVerifyHash] = useState("");
+    const [verifyText, setVerifyText] = useState("");
+    const [verifyInitiator, setVerifyInitiator] = useState("");
+    const [verifyTimestamp, setVerifyTimestamp] = useState("");
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationResult, setVerificationResult] = useState<{
         found: boolean;
         nod?: Nod;
-        method?: 'transaction' | 'content';
+        method?: 'transaction' | 'content' | 'recomputed';
+        computedHash?: string;
+        hashMatch?: boolean;
     } | null>(null);
 
     const filteredNods = useMemo(() => {
@@ -48,8 +55,9 @@ export default function VerifyPage() {
                 const query = searchQuery.toLowerCase();
 
                 // Resolve profiles for richer search
+                const primaryCounterparty = nod.counterparty || (nod.counterparties && nod.counterparties[0]) || "";
                 const creatorProfile = resolveProfile(nod.creator);
-                const counterpartyProfile = resolveProfile(nod.counterparty);
+                const counterpartyProfile = resolveProfile(primaryCounterparty);
                 const creatorName = creatorProfile?.displayName?.toLowerCase() || "";
                 const counterpartyName = counterpartyProfile?.displayName?.toLowerCase() || "";
 
@@ -59,6 +67,7 @@ export default function VerifyPage() {
                     (nod.creator || "").toLowerCase().includes(query) ||
                     creatorName.includes(query) ||
                     (nod.counterparty || "").toLowerCase().includes(query) ||
+                    (nod.counterparties || []).some(cp => cp.toLowerCase().includes(query)) ||
                     counterpartyName.includes(query) ||
                     (nod.id || "").toLowerCase().includes(query)
                 );
@@ -75,20 +84,22 @@ export default function VerifyPage() {
 
     const handleVerificationSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        performVerification(verifyHash);
+        if (verifyMode === "hash") {
+            performHashVerification(verifyHash);
+        } else {
+            performContentVerification();
+        }
     };
 
-    const performVerification = async (hashToVerify: string) => {
+    const performHashVerification = async (hashToVerify: string) => {
         if (!hashToVerify.trim()) return;
 
         setIsVerifying(true);
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 600));
 
         const cleanHash = hashToVerify.trim();
         const foundViaTx = onChainNods.find(n => n.transactionHash === cleanHash);
         const foundViaContent = onChainNods.find(n => n.hash === cleanHash);
-
         const found = foundViaTx || foundViaContent;
 
         setVerificationResult({
@@ -99,10 +110,34 @@ export default function VerifyPage() {
         setIsVerifying(false);
     };
 
+    const performContentVerification = async () => {
+        if (!verifyText.trim() || !verifyInitiator.trim() || !verifyTimestamp.trim()) return;
+
+        setIsVerifying(true);
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        const preimage = `${verifyText.trim()}|${verifyInitiator.trim()}|${verifyTimestamp.trim()}`;
+        const computedHash = await generateHash(preimage);
+        const foundViaContent = onChainNods.find(n => n.hash === computedHash);
+
+        setVerificationResult({
+            found: !!foundViaContent,
+            nod: foundViaContent,
+            method: 'recomputed',
+            computedHash,
+            hashMatch: !!foundViaContent
+        });
+        setIsVerifying(false);
+    };
+
     const statusFilters: { value: StatusFilter; label: string }[] = [
         { value: "all", label: "All" },
         { value: "awaiting", label: "Awaiting" },
         { value: "nodded", label: "Nodded" },
+        { value: "delivered", label: "Delivered" },
+        { value: "disputed", label: "Disputed" },
+        { value: "completed", label: "Completed" },
+        { value: "expired", label: "Expired" },
         { value: "declined", label: "Declined" },
     ];
 
@@ -122,39 +157,196 @@ export default function VerifyPage() {
                     </div>
                 </div>
 
-                {/* Registry Instructions */}
+                {/* Live Verification Panel */}
                 <Card className="overflow-hidden border-2 border-[var(--border)]">
-                    <CardContent className="p-6">
-                        <div className="rounded-xl p-6 bg-[var(--accent)]/30">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                                    <HugeiconsIcon icon={Search01Icon} className="w-5 h-5 text-blue-600" />
-                                </div>
-                                <div className="space-y-3 flex-1">
-                                    <h3 className="text-base font-semibold text-[var(--foreground)]">
-                                        How to Use the Registry
-                                    </h3>
-                                    <ul className="text-sm text-[var(--foreground-muted)] space-y-2">
-                                        <li className="flex items-start gap-2">
-                                            <span className="text-blue-600 mt-0.5">•</span>
-                                            <span><strong>Search by hash, username, or ID</strong> using the search box below</span>
-                                        </li>
-                                        <li className="flex items-start gap-2">
-                                            <span className="text-blue-600 mt-0.5">•</span>
-                                            <span><strong>Filter by status</strong> (All, Awaiting, Nodded, Declined) to find specific agreements</span>
-                                        </li>
-                                        <li className="flex items-start gap-2">
-                                            <span className="text-blue-600 mt-0.5">•</span>
-                                            <span><strong>Click usernames</strong> to view agreement details (hash verification required for non-participants)</span>
-                                        </li>
-                                        <li className="flex items-start gap-2">
-                                            <span className="text-blue-600 mt-0.5">•</span>
-                                            <span><strong>Copy transaction hashes</strong> by hovering over them for easy sharing</span>
-                                        </li>
-                                    </ul>
-                                </div>
+                    <CardContent className="p-6 space-y-5">
+                        <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                <HugeiconsIcon icon={SecurityCheckIcon} className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-base font-semibold text-[var(--foreground)]">
+                                    Verify an Agreement
+                                </h3>
+                                <p className="text-xs text-[var(--foreground-muted)] mt-1">
+                                    Look up by hash, or recompute the SHA-256 content hash from agreement data.
+                                </p>
                             </div>
                         </div>
+
+                        {/* Mode Tabs */}
+                        <div className="flex gap-1 bg-[var(--accent)] p-1 rounded-lg">
+                            <button
+                                onClick={() => { setVerifyMode("hash"); setVerificationResult(null); }}
+                                className={cn(
+                                    "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                                    verifyMode === "hash"
+                                        ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm"
+                                        : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                                )}
+                            >
+                                🔍 Lookup by Hash
+                            </button>
+                            <button
+                                onClick={() => { setVerifyMode("content"); setVerificationResult(null); }}
+                                className={cn(
+                                    "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                                    verifyMode === "content"
+                                        ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm"
+                                        : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                                )}
+                            >
+                                🔐 Recompute SHA-256
+                            </button>
+                        </div>
+
+                        {/* Verification Form */}
+                        <form onSubmit={handleVerificationSubmit} className="space-y-4">
+                            {verifyMode === "hash" ? (
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-[var(--foreground)]">Transaction Hash or Content Hash</label>
+                                    <Input
+                                        placeholder="0x... or paste a full transaction hash"
+                                        value={verifyHash}
+                                        onChange={(e) => { setVerifyHash(e.target.value); setVerificationResult(null); }}
+                                        className="font-mono text-sm"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-[var(--foreground)]">Agreement Text</label>
+                                        <Textarea
+                                            placeholder="Paste the exact agreement text..."
+                                            value={verifyText}
+                                            onChange={(e) => { setVerifyText(e.target.value); setVerificationResult(null); }}
+                                            className="text-sm min-h-[80px]"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-[var(--foreground)]">Initiator Address / Username</label>
+                                            <Input
+                                                placeholder="G... or username"
+                                                value={verifyInitiator}
+                                                onChange={(e) => { setVerifyInitiator(e.target.value); setVerificationResult(null); }}
+                                                className="font-mono text-sm"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-[var(--foreground)]">Created At (Date String)</label>
+                                            <Input
+                                                placeholder="e.g. 6/13/2026"
+                                                value={verifyTimestamp}
+                                                onChange={(e) => { setVerifyTimestamp(e.target.value); setVerificationResult(null); }}
+                                                className="text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-[var(--foreground-muted)]">
+                                        Preimage formula: <code className="font-mono bg-[var(--accent)] px-1 rounded">SHA-256(text|initiator|createdAt)</code>
+                                    </p>
+                                </div>
+                            )}
+
+                            <Button
+                                type="submit"
+                                disabled={isVerifying || (verifyMode === "hash" ? !verifyHash.trim() : !verifyText.trim() || !verifyInitiator.trim() || !verifyTimestamp.trim())}
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                            >
+                                {isVerifying ? (
+                                    <div className="flex items-center gap-2">
+                                        <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                            className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                                        />
+                                        {verifyMode === "hash" ? "Searching registry..." : "Computing SHA-256 & matching..."}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 mr-2" />
+                                        {verifyMode === "hash" ? "Verify Hash" : "Compute & Verify"}
+                                    </>
+                                )}
+                            </Button>
+                        </form>
+
+                        {/* Verification Result */}
+                        <AnimatePresence>
+                            {verificationResult && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    className="space-y-3"
+                                >
+                                    {/* Computed hash display for content mode */}
+                                    {verificationResult.method === 'recomputed' && verificationResult.computedHash && (
+                                        <div className="p-3 rounded-lg bg-[var(--accent)] border border-[var(--border)] space-y-1.5">
+                                            <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider">Computed SHA-256</span>
+                                            <code className="block text-xs font-mono text-[var(--foreground)] break-all select-all">
+                                                {verificationResult.computedHash}
+                                            </code>
+                                        </div>
+                                    )}
+
+                                    {/* Result banner */}
+                                    <div className={`p-4 rounded-lg border ${verificationResult.found ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"}`}>
+                                        <div className="flex items-center gap-2.5">
+                                            <HugeiconsIcon
+                                                icon={verificationResult.found ? CheckmarkCircle01Icon : CancelCircleIcon}
+                                                className={`w-5 h-5 ${verificationResult.found ? "text-emerald-600" : "text-rose-500"}`}
+                                            />
+                                            <div>
+                                                <span className={`text-sm font-bold ${verificationResult.found ? "text-emerald-600" : "text-rose-500"}`}>
+                                                    {verificationResult.found ? "✓ Agreement Found" : "✗ No Matching Agreement"}
+                                                </span>
+                                                {verificationResult.method && (
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] block mt-0.5">
+                                                        Matched via {verificationResult.method === 'transaction' ? 'transaction hash' : verificationResult.method === 'content' ? 'content hash' : 'SHA-256 recomputation'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Matched nod details */}
+                                        {verificationResult.nod && (
+                                            <div className="mt-3 pt-3 border-t border-[var(--border)]/30 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <div>
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Status</span>
+                                                    <StatusBadge status={verificationResult.nod.status} />
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Initiator</span>
+                                                    <span className="text-xs font-semibold text-[var(--foreground)]"><ProfileName username={verificationResult.nod.creator} /></span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Sealed</span>
+                                                    <span className="text-xs text-[var(--foreground)]">{verificationResult.nod.createdAt}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Escrow</span>
+                                                    <span className="text-xs font-semibold text-[var(--foreground)]">{verificationResult.nod.cautionAmount ? `${(verificationResult.nod.cautionAmount / 10_000_000).toFixed(2)} XLM` : "None"}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {verificationResult.nod && (
+                                            <div className="mt-3">
+                                                <a
+                                                    href={`/nod/${verificationResult.nod.id}`}
+                                                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                                                >
+                                                    View Full Agreement
+                                                    <HugeiconsIcon icon={ArrowRight01Icon} className="w-3.5 h-3.5" />
+                                                </a>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </CardContent>
                 </Card>
 
@@ -259,13 +451,27 @@ export default function VerifyPage() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    <a
-                                                        href={`/nod/${nod.id}`}
-                                                        className="text-sm font-medium text-[var(--foreground)] hover:text-emerald-600 hover:underline decoration-emerald-500/30 underline-offset-4 transition-colors"
-                                                    >
-                                                        <ProfileName username={nod.counterparty} />
-                                                    </a>
+                                                <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--foreground)]">
+                                                    {nod.counterparties && nod.counterparties.length > 0 ? (
+                                                        nod.counterparties.map((cp, idx) => (
+                                                            <React.Fragment key={cp}>
+                                                                <a
+                                                                    href={`/nod/${nod.id}`}
+                                                                    className="hover:text-emerald-600 hover:underline decoration-emerald-500/30 underline-offset-4 transition-colors"
+                                                                >
+                                                                    <ProfileName username={cp} />
+                                                                </a>
+                                                                {idx < nod.counterparties!.length - 1 && ", "}
+                                                            </React.Fragment>
+                                                        ))
+                                                    ) : (
+                                                        <a
+                                                            href={`/nod/${nod.id}`}
+                                                            className="hover:text-emerald-600 hover:underline decoration-emerald-500/30 underline-offset-4 transition-colors"
+                                                        >
+                                                            <ProfileName username={nod.counterparty} />
+                                                        </a>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
