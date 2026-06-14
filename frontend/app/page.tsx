@@ -18,7 +18,13 @@ const NodCard = dynamic(() => import("@/components/nod/nod-card").then(mod => ({
 });
 
 const FilterPills = dynamic(() => import("../components/nod/filter-pills").then(mod => ({ default: mod.FilterPills })), {
-    loading: () => <div className="h-10 flex gap-2">{[...Array(5)].map((_, i) => <div key={i} className="w-20 h-9 bg-[var(--accent)] rounded-lg animate-pulse" />)}</div>,
+    loading: () => (
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 bg-[var(--accent)] p-1 rounded-xl border border-[var(--border)] h-[46px] animate-pulse max-w-3xl">
+            {[...Array(7)].map((_, i) => (
+                <div key={i} className="rounded-lg bg-[var(--background)]/40 h-full" />
+            ))}
+        </div>
+    ),
 });
 
 import { WalletConnect } from "@/components/profile/wallet-connect";
@@ -98,16 +104,7 @@ export default function Dashboard() {
     const sentCount = participantNods.filter(n => n.createdByMe).length;
     const receivedCount = participantNods.filter(n => !n.createdByMe).length;
 
-    // Calculate count of nods in each filter group for the dropdown indicator
-    const filterCounts: Record<FilterOption, number> = {
-        all: participantNods.length,
-        awaiting: participantNods.filter(n => n.status === "awaiting").length,
-        nodded: participantNods.filter(n => n.status === "nodded" || n.status === "delivered" || n.status === "disputed").length,
-        completed: participantNods.filter(n => n.status === "completed").length,
-        expired: participantNods.filter(n => n.status === "expired").length,
-        declined: participantNods.filter(n => n.status === "declined").length,
-        draft: participantNods.filter(n => n.status === "draft").length,
-    };
+
 
     return (
         <div className="space-y-6">
@@ -142,7 +139,7 @@ export default function Dashboard() {
 
             {/* Filters */}
             <Suspense fallback={<div className="h-10 flex gap-2">{[...Array(5)].map((_, i) => <div key={i} className="w-20 h-9 bg-[var(--accent)] rounded-lg animate-pulse" />)}</div>}>
-                <FilterPills activeFilter={activeFilter} onFilterChange={setActiveFilter} counts={filterCounts} />
+                <FilterPills activeFilter={activeFilter} onFilterChange={setActiveFilter} />
             </Suspense>
 
             {/* Cards Grid */}

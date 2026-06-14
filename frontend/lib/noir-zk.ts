@@ -53,14 +53,12 @@ async function initZk() {
         ]);
 
         // Load Aztec Barretenberg backend
-        const { Barretenberg, UltraHonkBackend } = await import("@aztec/bb.js");
+        const { UltraHonkBackend } = await import("@aztec/bb.js");
         const { Noir } = await import("@noir-lang/noir_js");
-
-        const bbApi = await Barretenberg.new();
 
         // Instantiate Noir compiler compiler outputs
         noir = new Noir(circuit as any);
-        backend = new UltraHonkBackend(circuit.bytecode, bbApi as any);
+        backend = new UltraHonkBackend(circuit.bytecode);
 
         initialized = true;
     } catch (error) {

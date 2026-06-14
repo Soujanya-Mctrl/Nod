@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Search01Icon,
@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { ProfileName } from "@/components/nod/profile-name";
 import { StatusBadge, type NodStatus } from "@/components/nod/status-badge";
 import { cn, truncateHash } from "@/lib/utils";
+import { ChevronDown, Check } from "lucide-react";
+
 
 
 import { useNods, type Nod } from "@/lib/store";
@@ -30,6 +32,20 @@ export default function VerifyPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+    const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close status filter dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+                setIsFilterDropdownOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     // Verification state
     const [verifyHash, setVerifyHash] = useState("");
@@ -273,21 +289,92 @@ export default function VerifyPage() {
                             />
                         </div>
 
-                        <div className="flex gap-2 bg-[var(--accent)] p-1 rounded-lg">
-                            {statusFilters.map((filter) => (
-                                <button
-                                    key={filter.value}
-                                    onClick={() => setStatusFilter(filter.value)}
-                                    className={cn(
-                                        "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                                        statusFilter === filter.value
-                                            ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm"
-                                            : "text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
-                                    )}
+                        <div className="relative" ref={filterDropdownRef}>
+                            <button
+                                type="button"
+                                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                                className={cn(
+                                    "flex items-center justify-between w-full md:w-48 px-3.5 py-2.5 rounded-xl border text-sm font-medium transition-all cursor-pointer shadow-sm",
+                                    "bg-[var(--background)] border-[var(--border-strong)] text-[var(--foreground)]",
+                                    "hover:bg-[var(--accent)] hover:border-[var(--foreground-muted)]",
+                                    isFilterDropdownOpen && "border-[var(--foreground)] bg-[var(--accent)]"
+                                )}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className={cn(
+                                        "w-2 h-2 rounded-full",
+                                        statusFilter === "all" && "bg-zinc-400",
+                                        statusFilter === "awaiting" && "bg-amber-500",
+                                        statusFilter === "nodded" && "bg-blue-500",
+                                        statusFilter === "delivered" && "bg-indigo-500",
+                                        statusFilter === "disputed" && "bg-orange-500",
+                                        statusFilter === "completed" && "bg-emerald-500",
+                                        statusFilter === "expired" && "bg-yellow-600",
+                                        statusFilter === "declined" && "bg-rose-500"
+                                    )} />
+                                    <span>{statusFilters.find(f => f.value === statusFilter)?.label || "All"}</span>
+                                </div>
+                                <motion.div
+                                    animate={{ rotate: isFilterDropdownOpen ? 180 : 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="text-[var(--foreground-muted)] ml-2 shrink-0"
                                 >
-                                    {filter.label}
-                                </button>
-                            ))}
+                                    <ChevronDown className="w-4 h-4" />
+                                </motion.div>
+                            </button>
+
+                            <AnimatePresence>
+                                {isFilterDropdownOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                                        transition={{ duration: 0.12, ease: "easeOut" }}
+                                        className={cn(
+                                            "absolute right-0 mt-2 w-48 rounded-xl border shadow-lg z-50 py-1.5 focus:outline-none origin-top-right",
+                                            "bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-zinc-200/80 dark:border-zinc-800/80"
+                                        )}
+                                    >
+                                        {statusFilters.map((filter) => {
+                                            const isSelected = statusFilter === filter.value;
+                                            return (
+                                                <button
+                                                    key={filter.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setStatusFilter(filter.value);
+                                                        setIsFilterDropdownOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "flex items-center justify-between w-full px-3.5 py-2 text-sm text-left transition-colors cursor-pointer",
+                                                        isSelected
+                                                            ? "bg-zinc-50 dark:bg-zinc-900/60 font-semibold text-[var(--foreground)]"
+                                                            : "text-[var(--foreground-muted)] hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40 hover:text-[var(--foreground)]"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-2.5">
+                                                        <span className={cn(
+                                                            "w-2 h-2 rounded-full",
+                                                            filter.value === "all" && "bg-zinc-400",
+                                                            filter.value === "awaiting" && "bg-amber-500",
+                                                            filter.value === "nodded" && "bg-blue-500",
+                                                            filter.value === "delivered" && "bg-indigo-500",
+                                                            filter.value === "disputed" && "bg-orange-500",
+                                                            filter.value === "completed" && "bg-emerald-500",
+                                                            filter.value === "expired" && "bg-yellow-600",
+                                                            filter.value === "declined" && "bg-rose-500"
+                                                        )} />
+                                                        <span>{filter.label}</span>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <Check className="w-3.5 h-3.5 text-[var(--foreground)]" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
 

@@ -265,7 +265,8 @@ export default function CreateNodPage() {
                 tokenAddress: cautionAmount > 0 ? nativeTokenAddress : undefined,
                 cautionAmount: cautionAmount > 0 ? Math.floor(cautionAmount * 10000000) : 0,
                 completedParties: [],
-                arbitrator: resolvedArbitrator || undefined
+                arbitrator: resolvedArbitrator || undefined,
+                agreementIdHex
             };
             addNod(newNod);
 

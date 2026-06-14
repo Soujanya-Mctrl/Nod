@@ -19,12 +19,14 @@ import {
     type ZKProof,
     type ZKVerificationResult,
 } from "@/lib/zk-verifier";
+import { useToast } from "@/components/ui/toast";
 
 interface ZKVerificationPanelProps {
     nod: Nod;
 }
 
 export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
+    const toast = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
@@ -32,7 +34,8 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
     const [verificationResult, setVerificationResult] = useState<ZKVerificationResult | null>(null);
     const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
-    const canGenerate = nod.status !== "draft" && nod.status !== "declined";
+    // ZK constraints require status_nodded = true, which maps to active/nodded, completed, or delivered statuses
+    const canGenerate = nod.status === "nodded" || nod.status === "completed" || nod.status === "delivered";
 
     const handleGenerateProof = async () => {
         setIsGenerating(true);
@@ -43,9 +46,16 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
 
         try {
             const counterparty = nod.counterparties?.[0] || nod.counterparty || "";
-            const timestamp = nod.timestamp
-                ? parseInt(nod.timestamp)
-                : Math.floor(Date.now() / 1000);
+            
+            // Safely parse creation date and time to unix timestamp
+            let timestamp = Math.floor(Date.now() / 1000);
+            if (nod.createdAt && nod.timestamp) {
+                const dateStr = `${nod.createdAt} ${nod.timestamp}`;
+                const parsedDate = new Date(dateStr);
+                if (!isNaN(parsedDate.getTime())) {
+                    timestamp = Math.floor(parsedDate.getTime() / 1000);
+                }
+            }
 
             const generatedProof = await generateZKProof({
                 text: nod.text,
@@ -58,8 +68,13 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
             });
 
             setProof(generatedProof);
-        } catch (error) {
+            toast.success("Verification receipt successfully created!");
+        } catch (error: any) {
             console.error("Failed to generate ZK proof:", error);
+            if (error.stack) {
+                console.error("Stack trace:", error.stack);
+            }
+            toast.error(`${error.message || "Failed to generate ZK proof."} ${error.stack ? "\nStack: " + error.stack.slice(0, 150) : ""}`);
         } finally {
             setIsGenerating(false);
         }
@@ -76,8 +91,14 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
         try {
             const result = await verifyZKProof(proof);
             setVerificationResult(result);
-        } catch (error) {
+            if (result.valid) {
+                toast.success("Receipt verified successfully!");
+            } else {
+                toast.error("Receipt verification failed.");
+            }
+        } catch (error: any) {
             console.error("Failed to verify ZK proof:", error);
+            toast.error(error.message || "Failed to verify ZK proof.");
         } finally {
             setIsVerifying(false);
         }
@@ -142,34 +163,49 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                 </div>
 
                                 {!proof ? (
-                                    <Button
-                                        onClick={handleGenerateProof}
-                                        disabled={isGenerating || !canGenerate}
-                                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold"
-                                    >
-                                        {isGenerating ? (
-                                            <div className="flex items-center gap-2">
-                                                <motion.div
-                                                    animate={{ rotate: 360 }}
-                                                    transition={{
-                                                        duration: 1,
-                                                        repeat: Infinity,
-                                                        ease: "linear",
-                                                    }}
-                                                    className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                                                />
-                                                Creating secure cryptographic receipt...
+                                    <div className="space-y-3">
+                                        {!canGenerate && (
+                                            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-[11px] text-[var(--foreground-muted)] leading-relaxed">
+                                                <HugeiconsIcon icon={Alert01Icon} className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <span className="font-semibold text-amber-600">Agreement Not Active: </span>
+                                                    {nod.status === "awaiting" && "This agreement is currently awaiting co-signatures. Both parties must sign before a private verification receipt can be created."}
+                                                    {nod.status === "draft" && "This agreement is a draft and has not been signed or sealed yet."}
+                                                    {nod.status === "declined" && "This agreement was declined and is not active."}
+                                                    {nod.status === "expired" && "This agreement has expired."}
+                                                </div>
                                             </div>
-                                        ) : (
-                                            <>
-                                                <HugeiconsIcon
-                                                    icon={SecurityCheckIcon}
-                                                    className="w-4 h-4 mr-2"
-                                                />
-                                                Create Private Receipt
-                                            </>
                                         )}
-                                    </Button>
+
+                                        <Button
+                                            onClick={handleGenerateProof}
+                                            disabled={isGenerating || !canGenerate}
+                                            className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold cursor-pointer"
+                                        >
+                                            {isGenerating ? (
+                                                <div className="flex items-center gap-2">
+                                                    <motion.div
+                                                        animate={{ rotate: 360 }}
+                                                        transition={{
+                                                            duration: 1,
+                                                            repeat: Infinity,
+                                                            ease: "linear",
+                                                        }}
+                                                        className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                                                    />
+                                                    Creating secure cryptographic receipt...
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <HugeiconsIcon
+                                                        icon={SecurityCheckIcon}
+                                                        className="w-4 h-4 mr-2"
+                                                    />
+                                                    Create Private Receipt
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
                                 ) : (
                                     <motion.div
                                         initial={{ opacity: 0, y: 10 }}
