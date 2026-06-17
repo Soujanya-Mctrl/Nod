@@ -27,6 +27,8 @@ export interface Nod {
     signedCounterparties?: string[];
     arbitrator?: string;
     deliveredAt?: number;
+    ipfsEncrypted?: boolean;
+    encryptionMessage?: string;
 }
 
 export interface Profile {

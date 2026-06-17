@@ -3,6 +3,7 @@ import circuit from "../../circuits/target/nod_circuits.json";
 let initialized = false;
 let noir: any;
 let backend: any;
+let barretenberg: any;
 
 /**
  * Helper to convert Uint8Array to hex string
@@ -52,13 +53,13 @@ async function initZk() {
             initNoirC(fetch(noircUrl))
         ]);
 
-        // Load Aztec Barretenberg backend
-        const { UltraHonkBackend } = await import("@aztec/bb.js");
+        // Load Aztec Barretenberg backend (bb.js 5.x requires a shared Barretenberg instance)
+        const { UltraHonkBackend, Barretenberg } = await import("@aztec/bb.js");
         const { Noir } = await import("@noir-lang/noir_js");
 
-        // Instantiate Noir compiler compiler outputs
         noir = new Noir(circuit as any);
-        backend = new UltraHonkBackend(circuit.bytecode);
+        barretenberg = await Barretenberg.new();
+        backend = new UltraHonkBackend(circuit.bytecode, barretenberg);
 
         initialized = true;
     } catch (error) {

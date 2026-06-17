@@ -8,7 +8,7 @@ const pendingAgreements = new Map<string, any>();
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { id, cid, initiator, counterparty, counterparties, signedCounterparties, text, sig1, expiresAt, agreementIdHex, tokenAddress, cautionAmount, arbitrator } = body;
+        const { id, cid, initiator, counterparty, counterparties, signedCounterparties, text, ipfsEncrypted, encryptionMessage, sig1, expiresAt, agreementIdHex, tokenAddress, cautionAmount, arbitrator } = body;
 
         if (!id || !initiator || (!counterparty && (!counterparties || counterparties.length === 0)) || !sig1) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -25,6 +25,8 @@ export async function POST(req: Request) {
             signedCounterparties: signedCounterparties || [],
             counterparty: resolvedCounterparties[0], // backward compatibility
             text,
+            ipfsEncrypted: !!ipfsEncrypted,
+            encryptionMessage,
             sig1,
             createdAt: timestamp,
             expiresAt: expiresAt || (timestamp + 86400 * 7), // 7 days default

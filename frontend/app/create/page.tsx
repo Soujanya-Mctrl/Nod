@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useStellarWallet } from "@/components/providers/stellar-provider";
-import { buildSealAgreementTx, signTxWithFreighter, submitStellarTx } from "@/lib/stellar";
+import { buildSealAgreementTx, signMessageWithFreighter, signTxWithFreighter, submitStellarTx } from "@/lib/stellar";
 import { uploadToIPFS } from "@/lib/ipfs";
+import { buildAgreementEncryptionMessage, encryptAgreementForIPFS } from "@/lib/ipfs-encryption";
 import { useNods, type Nod } from "@/lib/store";
 import { generateHash, truncateHash } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
@@ -180,20 +181,6 @@ export default function CreateNodPage() {
         setIsSubmitting(true);
 
         try {
-            // 1. Upload metadata to IPFS
-            const agreementData = {
-                text: agreement.trim(),
-                creator: address,
-                counterparties: resolvedCounterparties,
-                timestamp: new Date().toISOString(),
-                template: activeTemplate,
-                cautionAmount: cautionAmount,
-                expiresAt: deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0,
-                arbitrator: resolvedArbitrator || null
-            };
-            const ipfsResult = await uploadToIPFS(agreementData);
-            const cid = ipfsResult.IpfsHash;
-
             const createdAt = Math.floor(Date.now() / 1000);
             const expiresAt = deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0;
             
@@ -201,6 +188,35 @@ export default function CreateNodPage() {
             const agreementIdHex = Array.from({ length: 32 }, () => 
                 Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
             ).join('');
+
+            // 1. Encrypt metadata before uploading to IPFS
+            const agreementData = {
+                text: agreement.trim(),
+                creator: address,
+                counterparties: resolvedCounterparties,
+                timestamp: new Date().toISOString(),
+                template: activeTemplate,
+                cautionAmount: cautionAmount,
+                expiresAt,
+                arbitrator: resolvedArbitrator || null
+            };
+
+            const encryptionMessage = buildAgreementEncryptionMessage({
+                agreementIdHex,
+                creator: address,
+                counterparties: resolvedCounterparties,
+                expiresAt,
+            });
+            toast.info("Sign once to encrypt agreement terms before IPFS upload...");
+            const initiatorEncryptionSig = await signMessageWithFreighter(encryptionMessage, address);
+            const encryptedAgreementData = await encryptAgreementForIPFS({
+                agreementData,
+                signatures: [initiatorEncryptionSig],
+                participants: [address, ...resolvedCounterparties],
+                signatureMessage: encryptionMessage,
+            });
+            const ipfsResult = await uploadToIPFS(encryptedAgreementData);
+            const cid = ipfsResult.IpfsHash;
 
             // Native XLM token contract address on Testnet
             const nativeTokenAddress = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
@@ -236,6 +252,8 @@ export default function CreateNodPage() {
                     initiator: address,
                     counterparties: resolvedCounterparties,
                     text: agreement.trim(),
+                    ipfsEncrypted: true,
+                    encryptionMessage,
                     sig1: signedXdr,
                     expiresAt,
                     agreementIdHex,
@@ -266,7 +284,9 @@ export default function CreateNodPage() {
                 cautionAmount: cautionAmount > 0 ? Math.floor(cautionAmount * 10000000) : 0,
                 completedParties: [],
                 arbitrator: resolvedArbitrator || undefined,
-                agreementIdHex
+                agreementIdHex,
+                ipfsEncrypted: true,
+                encryptionMessage
             };
             addNod(newNod);
 

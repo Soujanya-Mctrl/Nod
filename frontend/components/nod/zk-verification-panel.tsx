@@ -25,10 +25,20 @@ interface ZKVerificationPanelProps {
     nod: Nod;
 }
 
+const GENERATION_STEPS = [
+    "Preparing agreement inputs",
+    "Building private witness",
+    "Generating ZK receipt",
+    "Finalizing receipt"
+] as const;
+
+type GenerationStep = 0 | 1 | 2 | 3;
+
 export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
     const toast = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [generationStep, setGenerationStep] = useState<GenerationStep>(0);
     const [isVerifying, setIsVerifying] = useState(false);
     const [proof, setProof] = useState<ZKProof | null>(null);
     const [verificationResult, setVerificationResult] = useState<ZKVerificationResult | null>(null);
@@ -39,12 +49,14 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
 
     const handleGenerateProof = async () => {
         setIsGenerating(true);
+        setGenerationStep(0);
         setVerificationResult(null);
 
         // Simulate brief computation delay
         await new Promise((resolve) => setTimeout(resolve, 1200));
 
         try {
+            setGenerationStep(1);
             const counterparty = nod.counterparties?.[0] || nod.counterparty || "";
             
             // Safely parse creation date and time to unix timestamp
@@ -57,6 +69,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                 }
             }
 
+            setGenerationStep(2);
             const generatedProof = await generateZKProof({
                 text: nod.text,
                 initiator: nod.creator,
@@ -67,6 +80,7 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                 contentHash: nod.hash,
             });
 
+            setGenerationStep(3);
             setProof(generatedProof);
             toast.success("Verification receipt successfully created!");
         } catch (error: any) {
@@ -205,6 +219,57 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                 </>
                                             )}
                                         </Button>
+                                        {isGenerating && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: -4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="rounded-lg border border-violet-500/15 bg-violet-500/5 p-3"
+                                            >
+                                                <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                                                    <span className="text-violet-600">
+                                                        Step {generationStep + 1} of {GENERATION_STEPS.length}
+                                                    </span>
+                                                    <span className="text-[var(--foreground-muted)]">
+                                                        {GENERATION_STEPS[generationStep]}
+                                                    </span>
+                                                </div>
+
+                                                <div className="h-2 overflow-hidden rounded-full bg-violet-100">
+                                                    <motion.div
+                                                        className="h-full rounded-full bg-violet-600"
+                                                        initial={false}
+                                                        animate={{
+                                                            width: `${((generationStep + 1) / GENERATION_STEPS.length) * 100}%`,
+                                                        }}
+                                                        transition={{ duration: 0.35, ease: "easeOut" }}
+                                                    />
+                                                </div>
+
+                                                <div className="mt-3 grid grid-cols-4 gap-1.5">
+                                                    {GENERATION_STEPS.map((step, index) => (
+                                                        <div key={step} className="min-w-0">
+                                                            <div
+                                                                className={`mx-auto mb-1 h-2 w-2 rounded-full ${
+                                                                    index <= generationStep
+                                                                        ? "bg-violet-600"
+                                                                        : "bg-[var(--border)]"
+                                                                }`}
+                                                            />
+                                                            <span
+                                                                className={`block truncate text-center text-[9px] font-medium ${
+                                                                    index === generationStep
+                                                                        ? "text-violet-600"
+                                                                        : "text-[var(--foreground-muted)]"
+                                                                }`}
+                                                                title={step}
+                                                            >
+                                                                {step}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        )}
                                     </div>
                                 ) : (
                                     <motion.div
@@ -222,10 +287,10 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                             <div className="space-y-2 text-xs pt-1 border-t border-[var(--border)]">
                                                 <div>
                                                     <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">
-                                                        Secure Cryptographic Receipt (Proof Hash)
+                                                        Secure Cryptographic Receipt Hash
                                                     </span>
                                                     <code className="text-[10px] font-mono text-[var(--foreground)] break-all select-all block p-1.5 rounded bg-[var(--accent)]/50 border border-[var(--border)]/50 mt-1">
-                                                        0x{proof.proofHex.slice(0, 64)}...
+                                                        0x{proof.receiptHash}
                                                     </code>
                                                 </div>
 
@@ -436,6 +501,10 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                     <code>circuits/src/main.nr</code>
                                                 </div>
                                                 <div>
+                                                    <span className="font-semibold text-[var(--foreground)]">Barretenberg Backend: </span>
+                                                    <code>@aztec/bb.js@5.0.0-nightly.20260324</code>
+                                                </div>
+                                                <div>
                                                     <span className="font-semibold text-[var(--foreground)]">Noir Compiler: </span>
                                                     <code>v1.0.0-beta.20</code>
                                                 </div>
@@ -448,12 +517,18 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                     <code>commitment, status_nodded, expires_at, timestamp</code>
                                                 </div>
                                                 {proof && (
-                                                    <div className="pt-2 border-t border-[var(--border)]/50 mt-2">
-                                                        <span className="font-semibold text-[var(--foreground)] block mb-1">Full Proof Bytecode:</span>
-                                                        <code className="break-all whitespace-pre-wrap select-all block max-h-[120px] overflow-y-auto p-1 rounded bg-black/5">
-                                                            {proof.proofHex}
-                                                        </code>
-                                                    </div>
+                                                    <>
+                                                        <div className="pt-2 border-t border-[var(--border)]/50 mt-2">
+                                                            <span className="font-semibold text-[var(--foreground)]">Receipt Hash: </span>
+                                                            <code className="break-all select-all">0x{proof.receiptHash}</code>
+                                                        </div>
+                                                        <div>
+                                                            <span className="font-semibold text-[var(--foreground)] block mb-1">Full Proof Bytecode:</span>
+                                                            <code className="break-all whitespace-pre-wrap select-all block max-h-[120px] overflow-y-auto p-1 rounded bg-black/5">
+                                                                {proof.proofHex}
+                                                            </code>
+                                                        </div>
+                                                    </>
                                                 )}
                                             </div>
                                         </motion.div>

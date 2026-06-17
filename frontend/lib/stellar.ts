@@ -10,7 +10,7 @@ import {
     nativeToScVal,
     rpc
 } from "@stellar/stellar-sdk";
-import { signTransaction } from "@stellar/freighter-api";
+import { signMessage, signTransaction } from "@stellar/freighter-api";
 
 export const STELLAR_TESTNET_HORIZON = "https://horizon-testnet.stellar.org";
 export const STELLAR_TESTNET_RPC = "https://soroban-testnet.stellar.org";
@@ -158,6 +158,27 @@ export async function signTxWithFreighter(xdrString: string): Promise<string> {
         throw new Error(`Freighter signing failed: ${res.error}`);
     }
     return res.signedTxXdr;
+}
+
+/**
+ * Signs an arbitrary message with Freighter for client-side key derivation.
+ */
+export async function signMessageWithFreighter(message: string, address?: string): Promise<string> {
+    const res = await signMessage(message, {
+        networkPassphrase: STELLAR_NETWORK_PASSPHRASE,
+        address,
+    });
+    if (res.error) {
+        throw new Error(`Freighter message signing failed: ${res.error}`);
+    }
+    if (!res.signedMessage) {
+        throw new Error("Freighter did not return a signed message.");
+    }
+    return typeof res.signedMessage === "string"
+        ? res.signedMessage
+        : Array.from(res.signedMessage)
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join("");
 }
 
 /**

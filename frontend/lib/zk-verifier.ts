@@ -11,6 +11,7 @@ export interface ZKPublicInputs {
 
 export interface ZKProof {
     proofHex: string;          // Hex encoded proof bytes
+    receiptHash: string;       // SHA-256 hash of proof bytes and public inputs
     publicInputs: ZKPublicInputs;
     generatedAt: number;
     circuitName: string;
@@ -93,6 +94,14 @@ export async function generateZKProof(params: {
 
     const proofHex = bytesToHex(realProof.proof);
 
+    if (!(realProof.proof instanceof Uint8Array) || realProof.proof.length === 0) {
+        throw new Error("ZK backend returned an empty proof.");
+    }
+
+    if (realProof.proof.every((byte: number) => byte === 0)) {
+        throw new Error("ZK backend returned an invalid all-zero proof.");
+    }
+
     const publicInputs: ZKPublicInputs = {
         commitment: commitmentHex,
         initiatorPubKey: initiator,
@@ -101,11 +110,18 @@ export async function generateZKProof(params: {
         expiresAt: expiresAt,
     };
 
+    const publicInputBytes = new TextEncoder().encode(JSON.stringify(publicInputs));
+    const receiptPreimage = new Uint8Array(realProof.proof.length + publicInputBytes.length);
+    receiptPreimage.set(realProof.proof, 0);
+    receiptPreimage.set(publicInputBytes, realProof.proof.length);
+    const receiptHash = bytesToHex(await computeSha256(receiptPreimage));
+
     return {
         proofHex,
+        receiptHash,
         publicInputs,
         generatedAt: Date.now(),
-        circuitName: "nod_circuits (Noir v1.0.0-beta.20)",
+        circuitName: "nod_circuits (Noir v1.0.0-beta.20, bb.js 5.0.0-nightly.20260324)",
         isSimulated: false,
         realProof,
     };

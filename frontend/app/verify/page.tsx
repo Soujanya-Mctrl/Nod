@@ -20,6 +20,10 @@ import { ProfileName } from "@/components/nod/profile-name";
 import { StatusBadge, type NodStatus } from "@/components/nod/status-badge";
 import { cn, truncateHash } from "@/lib/utils";
 import { ChevronDown, Check } from "lucide-react";
+import { fetchIPFSContent } from "@/lib/soroban-query";
+import { isEncryptedIPFSPayload } from "@/lib/ipfs-encryption";
+import { parseNodSharePackage, type NodSharePackage } from "@/lib/nod-share";
+import { generateHash } from "@/lib/utils";
 
 
 
@@ -54,6 +58,11 @@ export default function VerifyPage() {
         found: boolean;
         nod?: Nod;
         method?: 'transaction' | 'content';
+        sharePackage?: NodSharePackage;
+        ipfsEncrypted?: boolean;
+        plaintextMatchesPackage?: boolean;
+        registryMatchesShare?: boolean;
+        ipfsChecked?: boolean;
     } | null>(null);
 
     const filteredNods = useMemo(() => {
@@ -104,6 +113,43 @@ export default function VerifyPage() {
         await new Promise(resolve => setTimeout(resolve, 600));
 
         const cleanHash = hashToVerify.trim();
+        const sharePackage = parseNodSharePackage(cleanHash);
+
+        if (sharePackage) {
+            const foundViaTx = sharePackage.transactionHash
+                ? onChainNods.find(n => n.transactionHash === sharePackage.transactionHash)
+                : undefined;
+            const foundViaContent = onChainNods.find(n =>
+                n.hash === sharePackage.sealedContentHash ||
+                (!!sharePackage.cid && n.cid === sharePackage.cid)
+            );
+            const found = foundViaTx || foundViaContent;
+            const plaintextHash = await generateHash(sharePackage.text);
+            let ipfsEncrypted = false;
+            let ipfsChecked = false;
+
+            if (sharePackage.cid) {
+                const ipfsContent = await fetchIPFSContent(sharePackage.cid);
+                ipfsChecked = !!ipfsContent;
+                ipfsEncrypted = isEncryptedIPFSPayload(ipfsContent);
+            }
+
+            setVerificationResult({
+                found: !!found || !!sharePackage.cid,
+                nod: found,
+                method: foundViaTx ? "transaction" : "content",
+                sharePackage,
+                ipfsEncrypted,
+                ipfsChecked,
+                plaintextMatchesPackage: plaintextHash === sharePackage.plaintextHash,
+                registryMatchesShare: found
+                    ? found.hash === sharePackage.sealedContentHash && (!sharePackage.cid || found.cid === sharePackage.cid)
+                    : false,
+            });
+            setIsVerifying(false);
+            return;
+        }
+
         const foundViaTx = onChainNods.find(n => n.transactionHash === cleanHash);
         const foundViaContent = onChainNods.find(n => n.hash === cleanHash || n.cid === cleanHash);
         const found = foundViaTx || foundViaContent;
@@ -165,7 +211,7 @@ export default function VerifyPage() {
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-[var(--foreground)]">Transaction Hash or IPFS CID (Content Hash)</label>
                                 <Input
-                                    placeholder="e.g. Qm... or 0x... / transaction hash"
+                                    placeholder="e.g. nodshare:... / Qm... / 0x... / transaction hash"
                                     value={verifyHash}
                                     onChange={(e) => { setVerifyHash(e.target.value); setVerificationResult(null); }}
                                     className="font-mono text-sm"
@@ -224,6 +270,41 @@ export default function VerifyPage() {
                                         </div>
 
                                         {/* Matched nod details */}
+                                        {verificationResult.sharePackage && (
+                                            <div className="mt-3 pt-3 border-t border-[var(--border)]/30 space-y-3">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <div>
+                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Plaintext Package</span>
+                                                        <span className={`text-xs font-semibold ${verificationResult.plaintextMatchesPackage ? "text-emerald-600" : "text-rose-500"}`}>
+                                                            {verificationResult.plaintextMatchesPackage ? "Hash matches" : "Hash mismatch"}
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">IPFS Payload</span>
+                                                        <span className={`text-xs font-semibold ${verificationResult.ipfsEncrypted ? "text-emerald-600" : "text-amber-600"}`}>
+                                                            {verificationResult.ipfsChecked
+                                                                ? verificationResult.ipfsEncrypted
+                                                                    ? "Encrypted CID found"
+                                                                    : "CID found, not encrypted"
+                                                                : "CID not checked"}
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Local Registry Match</span>
+                                                        <span className={`text-xs font-semibold ${verificationResult.registryMatchesShare ? "text-emerald-600" : "text-[var(--foreground-muted)]"}`}>
+                                                            {verificationResult.registryMatchesShare ? "Matched" : "No local match"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="rounded-lg border border-[var(--border)] bg-[var(--accent)]/40 p-3">
+                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block mb-1">Party-Provided Plaintext</span>
+                                                    <p className="text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
+                                                        "{verificationResult.sharePackage.text}"
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {verificationResult.nod && (
                                             <div className="mt-3 pt-3 border-t border-[var(--border)]/30 grid grid-cols-2 md:grid-cols-4 gap-3">
                                                 <div>

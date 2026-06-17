@@ -4,8 +4,7 @@
     "private": true,
     "description": "Nod - A premium blockchain agreement platform",
     "workspaces": [
-        "frontend",
-        "subgraph"
+        "frontend"
     ],
     "scripts": {
         "dev": "npm run dev --workspace=frontend",

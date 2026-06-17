@@ -14,7 +14,9 @@ import {
     Coins01Icon,
     SecurityCheckIcon,
     HourglassIcon,
-    Alert01Icon
+    Alert01Icon,
+    Copy01Icon,
+    Tick01Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
@@ -24,7 +26,6 @@ import { StatusBadge } from "@/components/nod/status-badge";
 import { useNods, type Nod } from "@/lib/store";
 import { ProfileName } from "@/components/nod/profile-name";
 import { NodIdentityCard } from "@/components/profile/nod-identity-card";
-import { HashVerificationModal } from "@/components/nod/hash-verification-modal";
 import { ZKVerificationPanel } from "@/components/nod/zk-verification-panel";
 import { useStellarWallet } from "@/components/providers/stellar-provider";
 import { 
@@ -43,6 +44,8 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { generateHash } from "@/lib/utils";
 import { queryAgreementOnChain, fetchIPFSContent, type OnChainAgreement } from "@/lib/soroban-query";
+import { isEncryptedIPFSPayload } from "@/lib/ipfs-encryption";
+import { buildNodSharePackage, encodeNodSharePackage, parseNodSharePackage } from "@/lib/nod-share";
 
 const TEMPLATES = [
     { id: "freelancer", subtitle: "Freelancer / Client" },
@@ -51,16 +54,38 @@ const TEMPLATES = [
     { id: "vendor", subtitle: "Business Purchase" }
 ] as const;
 
+function extractAgreementTextFromIPFS(content: unknown): string {
+    if (!content) return "";
+
+    if (typeof content === "string") {
+        try {
+            const parsed = JSON.parse(content);
+            return extractAgreementTextFromIPFS(parsed);
+        } catch {
+            return content;
+        }
+    }
+
+    if (typeof content === "object" && "text" in content) {
+        const text = (content as { text?: unknown }).text;
+        return typeof text === "string" ? text : "";
+    }
+
+    return "";
+}
+
 export default function NodDetailPage() {
     const params = useParams();
     const router = useRouter();
     const nodId = params.id as string;
-    const { getNodById, updateNod, isLoaded, isParticipant, userProfile } = useNods();
+    const { getNodById, updateNod, isLoaded } = useNods();
 
     const nod = getNodById(nodId);
 
     const [isActionLoading, setIsActionLoading] = useState<"accept" | "reject" | "complete" | "claim" | "deliver" | "dispute" | "resolve" | null>(null);
     const [hasAccess, setHasAccess] = useState(false);
+    const [shareInput, setShareInput] = useState("");
+    const [shareError, setShareError] = useState<string | null>(null);
     const [timeLeft, setTimeLeft] = useState<string>("");
     const [isExpired, setIsExpired] = useState(false);
     const [showVerifyGuide, setShowVerifyGuide] = useState(false);
@@ -69,7 +94,7 @@ export default function NodDetailPage() {
     // Live verification states
     const [verifyStep, setVerifyStep] = useState<0 | 1 | 2 | 3>(0);
     const [isVerifyRunning, setIsVerifyRunning] = useState(false);
-    const [contentCheck, setContentCheck] = useState<{ passed: boolean; ipfsText: string; expectedText: string } | null>(null);
+    const [contentCheck, setContentCheck] = useState<{ passed: boolean; ipfsText: string; ipfsContent: unknown; expectedText: string; encrypted?: boolean } | null>(null);
     const [ipfsCheck, setIpfsCheck] = useState<{ passed: boolean; data: Record<string, unknown> | null; error?: string } | null>(null);
     const [contractCheck, setContractCheck] = useState<{ passed: boolean; data: OnChainAgreement | null; error?: string } | null>(null);
     
@@ -77,6 +102,7 @@ export default function NodDetailPage() {
     const [draftSignedCounterparties, setDraftSignedCounterparties] = useState<string[]>([]);
     const [draftSig1, setDraftSig1] = useState<string>("");
     const [agreementIdHex, setAgreementIdHex] = useState<string>("");
+    const [shareCopied, setShareCopied] = useState(false);
 
     const toast = useToast();
     const { address, isConnected, connect, isInitializing } = useStellarWallet();
@@ -101,25 +127,46 @@ export default function NodDetailPage() {
             });
     }, [nod, nodId, isLoaded]);
 
-    const isLoadingProfile = isInitializing || (address !== null && userProfile === null);
-
-    // Check if user has access (participant or verified hash)
     useEffect(() => {
-        if (!nod || !isLoaded || isLoadingProfile) return;
+        if (!nod || !isLoaded || isInitializing) return;
 
-        if (isParticipant(nod)) {
-            setHasAccess(true);
+        const isWalletParticipant = !!address && (
+            nod.creator === address ||
+            nod.counterparties.includes(address) ||
+            nod.arbitrator === address
+        );
+
+        const verifiedShares = JSON.parse(sessionStorage.getItem("verified_nod_shares") || "{}");
+        setHasAccess(isWalletParticipant || verifiedShares[nodId] === true);
+    }, [nod, nodId, isLoaded, isInitializing, address]);
+
+    const verifySharePackageForAccess = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!nod) return;
+
+        const sharePackage = parseNodSharePackage(shareInput);
+        if (!sharePackage) {
+            setShareError("Paste a valid nodshare verification package.");
             return;
         }
 
-        const verifiedHashes = JSON.parse(sessionStorage.getItem("verified_nod_hashes") || "{}");
-        if (verifiedHashes[nodId]) {
-            setHasAccess(true);
+        const plaintextHash = await generateHash(sharePackage.text);
+        const matchesNod = sharePackage.nodId === nod.id ||
+            sharePackage.sealedContentHash === nod.hash ||
+            (!!nod.cid && sharePackage.cid === nod.cid);
+        const matchesPlaintext = plaintextHash === sharePackage.plaintextHash && sharePackage.text === nod.text;
+
+        if (!matchesNod || !matchesPlaintext) {
+            setShareError("This verification package does not match this Nod.");
             return;
         }
 
-        setHasAccess(false);
-    }, [nod, nodId, isLoaded, isParticipant, userProfile, address, isLoadingProfile]);
+        const verifiedShares = JSON.parse(sessionStorage.getItem("verified_nod_shares") || "{}");
+        verifiedShares[nodId] = true;
+        sessionStorage.setItem("verified_nod_shares", JSON.stringify(verifiedShares));
+        setShareError(null);
+        setHasAccess(true);
+    };
 
     // Expiry and Review Window timer countdown
     useEffect(() => {
@@ -170,7 +217,7 @@ export default function NodDetailPage() {
         return () => clearInterval(interval);
     }, [nod]);
 
-    if (!isLoaded || isLoadingProfile) {
+    if (!isLoaded) {
         return (
             <div className="max-w-2xl mx-auto space-y-6 pt-10">
                 <div className="h-6 w-32 bg-[var(--accent)] rounded animate-pulse" />
@@ -545,89 +592,6 @@ export default function NodDetailPage() {
         }
     };
 
-    // Show access gate if user doesn't have access
-    if (!hasAccess) {
-        return (
-            <div className="max-w-2xl mx-auto space-y-6">
-                <Button variant="ghost" size="sm" asChild>
-                    <Link href="/">
-                        <HugeiconsIcon icon={ArrowLeft01Icon} className="w-4 h-4 mr-2" />
-                        Back to Dashboard
-                    </Link>
-                </Button>
-
-                {!isConnected ? (
-                    <Card className="border-2 overflow-hidden shadow-xl">
-                        <CardHeader className="text-center pb-2 bg-[var(--accent)]/10">
-                            <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-4 border border-amber-200">
-                                <span className="text-4xl">🔒</span>
-                            </div>
-                            <CardTitle className="text-xl font-bold tracking-tight">Private Agreement Access</CardTitle>
-                            <CardDescription>
-                                To view this agreement, please connect your wallet or enter the sealed content hash.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-6 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-[var(--border)]">
-                                {/* Option 1: Participant */}
-                                <div className="space-y-4 pb-6 md:pb-0 md:pr-6 flex flex-col justify-between">
-                                    <div className="space-y-2">
-                                        <h3 className="text-sm font-bold flex items-center gap-2">
-                                            <span className="text-lg">🤝</span>
-                                            <span>Agreement Participant</span>
-                                        </h3>
-                                        <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
-                                            Are you the initiator, a co-signer, or the arbitrator? Connect your Freighter wallet to automatically unlock and view the agreement details.
-                                        </p>
-                                    </div>
-                                    <Button 
-                                        onClick={connect} 
-                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold mt-4"
-                                    >
-                                        Connect Freighter Wallet
-                                    </Button>
-                                </div>
-
-                                {/* Option 2: Third-Party */}
-                                <div className="space-y-4 pt-6 md:pt-0 md:pl-6">
-                                    <div className="space-y-2">
-                                        <h3 className="text-sm font-bold flex items-center gap-2">
-                                            <span className="text-lg">🔍</span>
-                                            <span>Third-Party Verifier</span>
-                                        </h3>
-                                        <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
-                                            If you are a third party checking this agreement, you must enter the sealed content hash to view details.
-                                        </p>
-                                    </div>
-                                    <HashVerificationModal
-                                        expectedHash={nod.hash}
-                                        nodId={nodId}
-                                        onVerified={() => setHasAccess(true)}
-                                        isInline
-                                    />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <div className="space-y-4">
-                        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-600 flex items-center gap-2.5">
-                            <HugeiconsIcon icon={Alert01Icon} className="w-4.5 h-4.5 shrink-0" />
-                            <span>
-                                Connected wallet <strong>{address?.slice(0, 8)}...{address?.slice(-4)}</strong> is not registered as a participant on this agreement. Enter the sealed content hash to view/verify.
-                            </span>
-                        </div>
-                        <HashVerificationModal
-                            expectedHash={nod.hash}
-                            nodId={nodId}
-                            onVerified={() => setHasAccess(true)}
-                        />
-                    </div>
-                )}
-            </div>
-        );
-    }
-
     const templateConfig = TEMPLATES.find((t) => t.id === (nod as any).template) || 
         (nod.cautionAmount && nod.cautionAmount > 0 ? TEMPLATES[0] : TEMPLATES[1]);
 
@@ -637,6 +601,14 @@ export default function NodDetailPage() {
 
     const hasUserSignedDraft = address ? draftSignedCounterparties.includes(address) : false;
     const hasUserApprovedCompletion = address ? (nod.completedParties || []).includes(address) : false;
+
+    const handleCopyVerificationShare = async () => {
+        const sharePackage = await buildNodSharePackage(nod);
+        await navigator.clipboard.writeText(encodeNodSharePackage(sharePackage));
+        setShareCopied(true);
+        toast.success("Third-party verification package copied.");
+        setTimeout(() => setShareCopied(false), 2000);
+    };
 
     return (
         <div className="max-w-2xl mx-auto space-y-6">
@@ -831,6 +803,26 @@ export default function NodDetailPage() {
                                 <NodIdentityCard id={nod.transactionHash} label="Transaction Hash" />
                             )}
                             <NodIdentityCard id={nod.hash} label="Sealed Content Hash" />
+                        </div>
+
+                        {/* Third-party verification share */}
+                        <div className="p-4 rounded-xl border border-emerald-500/15 bg-emerald-500/5 flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="flex-1 space-y-1">
+                                <h4 className="text-xs font-bold text-[var(--foreground)]">Share With Third-Party Verifier</h4>
+                                <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
+                                    Copies a verification package with the CID, sealed hashes, and party-provided plaintext. IPFS remains encrypted.
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={handleCopyVerificationShare}
+                                className="shrink-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            >
+                                <HugeiconsIcon icon={shareCopied ? Tick01Icon : Copy01Icon} className="w-4 h-4 mr-2" />
+                                {shareCopied ? "Copied" : "Copy Verify Package"}
+                            </Button>
                         </div>
                     </CardContent>
 
@@ -1070,10 +1062,10 @@ export default function NodDetailPage() {
 
                                             // Step 2: IPFS fetch
                                             setVerifyStep(2);
-                                            let ipfsContent: Record<string, any> | null = null;
+                                            let ipfsContent: Record<string, unknown> | null = null;
                                             try {
                                                 if (onChainCid && !onChainCid.startsWith("MOCK_CID_")) {
-                                                    ipfsContent = await fetchIPFSContent(onChainCid) as Record<string, any>;
+                                                    ipfsContent = await fetchIPFSContent(onChainCid);
                                                     setIpfsCheck({ passed: !!ipfsContent, data: ipfsContent });
                                                 } else {
                                                     setIpfsCheck({ passed: false, data: null, error: onChainCid?.startsWith("MOCK_CID_") ? "Mock CID — IPFS not pinned" : "No CID available" });
@@ -1086,12 +1078,16 @@ export default function NodDetailPage() {
                                             // Step 3: Content Match
                                             setVerifyStep(3);
                                             try {
-                                                const ipfsText = ipfsContent?.text || "";
                                                 const expectedText = nod.text || "";
-                                                const textMatch = ipfsText.trim() === expectedText.trim();
-                                                setContentCheck({ passed: textMatch, ipfsText, expectedText });
+                                                if (isEncryptedIPFSPayload(ipfsContent)) {
+                                                    setContentCheck({ passed: !!expectedText, ipfsText: expectedText, ipfsContent, expectedText, encrypted: true });
+                                                } else {
+                                                    const ipfsText = extractAgreementTextFromIPFS(ipfsContent);
+                                                    const textMatch = ipfsText.trim() === expectedText.trim();
+                                                    setContentCheck({ passed: textMatch, ipfsText, ipfsContent, expectedText });
+                                                }
                                             } catch {
-                                                setContentCheck({ passed: false, ipfsText: "", expectedText: nod.text });
+                                                setContentCheck({ passed: false, ipfsText: "", ipfsContent: null, expectedText: nod.text });
                                             }
 
                                             setIsVerifyRunning(false);
@@ -1182,7 +1178,11 @@ export default function NodDetailPage() {
                                         </div>
                                         {contentCheck && (
                                             <div className={`p-3 rounded-lg border text-xs ${contentCheck.passed ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-600" : "bg-rose-500/5 border-rose-500/15 text-rose-500"} font-semibold`}>
-                                                {contentCheck.passed ? "✓ Verified: The agreement content retrieved from decentralized storage matches the local terms exactly." : "✗ Mismatch: The agreement content does not match the local terms."}
+                                                {contentCheck.encrypted
+                                                    ? "✓ Verified: IPFS stores an encrypted agreement payload. Plaintext is available only from a participating party."
+                                                    : contentCheck.passed
+                                                        ? "✓ Verified: The agreement content retrieved from decentralized storage matches the local terms exactly."
+                                                        : "✗ Mismatch: The agreement content does not match the local terms."}
                                             </div>
                                         )}
                                     </motion.div>
@@ -1232,11 +1232,13 @@ export default function NodDetailPage() {
                                                             <>
                                                                 <div>
                                                                     <span className="font-semibold text-[var(--foreground)]">Expected Content: </span>
-                                                                    <code className="break-all">"{contentCheck.expectedText}"</code>
+                                                                    <code className="break-all">{JSON.stringify(contentCheck.expectedText)}</code>
                                                                 </div>
                                                                 <div>
                                                                     <span className="font-semibold text-[var(--foreground)]">IPFS Content: </span>
-                                                                    <code className="break-all">"{contentCheck.ipfsText}"</code>
+                                                                    <pre className="mt-1 whitespace-pre-wrap break-all rounded-md bg-neutral-900 p-3 text-[10px] leading-relaxed text-neutral-100">
+                                                                        {JSON.stringify(contentCheck.ipfsContent, null, 2)}
+                                                                    </pre>
                                                                 </div>
                                                             </>
                                                         )}
