@@ -25,6 +25,8 @@ target/
 target_cli/
 target_cli_temp/
 **/target/
+!circuits/target/
+!circuits/target/nod_circuits.json
 
 # Helper scripts
 frontend/scripts/
