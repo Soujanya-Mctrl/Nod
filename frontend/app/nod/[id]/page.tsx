@@ -16,9 +16,11 @@ import {
     HourglassIcon,
     Alert01Icon,
     Copy01Icon,
-    Tick01Icon
+    Tick01Icon,
+    Share01Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { ShareModal } from "@/components/nod/share-modal";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,6 +105,7 @@ export default function NodDetailPage() {
     const [draftSig1, setDraftSig1] = useState<string>("");
     const [agreementIdHex, setAgreementIdHex] = useState<string>("");
     const [shareCopied, setShareCopied] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
     const toast = useToast();
     const { address, isConnected, connect, isInitializing } = useStellarWallet();
@@ -805,23 +808,23 @@ export default function NodDetailPage() {
                             <NodIdentityCard id={nod.hash} label="Sealed Content Hash" />
                         </div>
 
-                        {/* Third-party verification share */}
-                        <div className="p-4 rounded-xl border border-emerald-500/15 bg-emerald-500/5 flex flex-col sm:flex-row sm:items-center gap-3">
+                        {/* Secure encrypted share */}
+                        <div className="p-4 rounded-xl border border-violet-500/15 bg-violet-500/5 flex flex-col sm:flex-row sm:items-center gap-3">
                             <div className="flex-1 space-y-1">
-                                <h4 className="text-xs font-bold text-[var(--foreground)]">Share With Third-Party Verifier</h4>
+                                <h4 className="text-xs font-bold text-[var(--foreground)]">Secure Share Link</h4>
                                 <p className="text-xs text-[var(--foreground-muted)] leading-relaxed">
-                                    Copies a verification package with the CID, sealed hashes, and party-provided plaintext. IPFS remains encrypted.
+                                    Generate a client-side encrypted share link gated to a specific recipient wallet address.
                                 </p>
                             </div>
                             <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                onClick={handleCopyVerificationShare}
-                                className="shrink-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => setIsShareModalOpen(true)}
+                                className="shrink-0 border-violet-200 text-violet-700 hover:bg-violet-50 font-semibold cursor-pointer"
                             >
-                                <HugeiconsIcon icon={shareCopied ? Tick01Icon : Copy01Icon} className="w-4 h-4 mr-2" />
-                                {shareCopied ? "Copied" : "Copy Verify Package"}
+                                <HugeiconsIcon icon={Share01Icon} className="w-4 h-4 mr-2" />
+                                Share Securely
                             </Button>
                         </div>
                     </CardContent>
@@ -1276,6 +1279,15 @@ export default function NodDetailPage() {
 
             {/* Zero-Knowledge Proof Verification Panel */}
             <ZKVerificationPanel nod={nod} />
+
+            {/* Share Modal Dialog */}
+            {nod && (
+                <ShareModal
+                    nod={nod}
+                    isOpen={isShareModalOpen}
+                    onClose={() => setIsShareModalOpen(false)}
+                />
+            )}
         </div>
     );
 }

@@ -14,6 +14,7 @@ export interface NodSharePackage {
     createdAt: string;
     expiresAt?: number;
     ipfsEncrypted?: boolean;
+    cautionAmount?: number;
 }
 
 function encodeBase64Url(value: string): string {
@@ -41,6 +42,7 @@ export async function buildNodSharePackage(nod: {
     createdAt: string;
     expiresAt?: number;
     ipfsEncrypted?: boolean;
+    cautionAmount?: number;
 }): Promise<NodSharePackage> {
     return {
         version: "nod-share-v1",
@@ -56,6 +58,7 @@ export async function buildNodSharePackage(nod: {
         createdAt: nod.createdAt,
         expiresAt: nod.expiresAt,
         ipfsEncrypted: nod.ipfsEncrypted,
+        cautionAmount: nod.cautionAmount,
     };
 }
 
@@ -77,3 +80,110 @@ export function parseNodSharePackage(input: string): NodSharePackage | null {
         return null;
     }
 }
+
+// ==========================================
+// ZK & Gated Share API Client Helpers
+// ==========================================
+
+import { bytesToHex, hexToBytes } from "./ipfs-encryption";
+
+/**
+ * Encrypts a string payload with a randomly generated 256-bit AES-GCM key.
+ */
+export async function encryptPayloadWithRandomKey(plaintextStr: string): Promise<{ ciphertextHex: string; ivHex: string; keyHex: string }> {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+    );
+    const plaintext = new TextEncoder().encode(plaintextStr);
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    return {
+        ciphertextHex: bytesToHex(new Uint8Array(ciphertext)),
+        ivHex: bytesToHex(iv),
+        keyHex: bytesToHex(keyBytes)
+    };
+}
+
+/**
+ * Decrypts an AES-GCM encrypted payload using the provided key and IV.
+ */
+export async function decryptPayloadWithKey(ciphertextHex: string, ivHex: string, keyHex: string): Promise<string> {
+    const iv = hexToBytes(ivHex);
+    const keyBytes = hexToBytes(keyHex);
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBytes as any,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+    );
+    const ciphertext = hexToBytes(ciphertextHex);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as any }, key, ciphertext as any);
+    return new TextDecoder().decode(decrypted);
+}
+
+/**
+ * Registers a ZK-based share package with the backend.
+ */
+export async function registerZkShare(params: {
+    nodId: string;
+    zkProof: any;
+    publicInputs: any;
+}): Promise<string> {
+    const res = await fetch("/api/nods/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            nodId: params.nodId,
+            type: "zk",
+            zkProof: params.zkProof,
+            publicInputs: params.publicInputs
+        })
+    });
+    
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to register ZK share");
+    }
+    
+    const data = await res.json();
+    return data.shareId;
+}
+
+/**
+ * Registers a Gated-decryption share package with the backend.
+ */
+export async function registerGatedShare(params: {
+    nodId: string;
+    allowedAddress: string;
+    encryptedPayload: string;
+    iv: string;
+    key: string;
+}): Promise<string> {
+    const res = await fetch("/api/nods/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            nodId: params.nodId,
+            type: "gated",
+            allowedAddress: params.allowedAddress,
+            encryptedPayload: params.encryptedPayload,
+            iv: params.iv,
+            key: params.key
+        })
+    });
+    
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to register Gated share");
+    }
+    
+    const data = await res.json();
+    return data.shareId;
+}
+
