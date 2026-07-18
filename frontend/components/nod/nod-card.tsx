@@ -19,6 +19,7 @@ import { StatusBadge, type NodStatus } from "./status-badge";
 import { cn } from "@/lib/utils";
 import { useNods } from "@/lib/store";
 import { ProfileName } from "./profile-name";
+import { useToast } from "@/components/ui/toast";
 
 export interface NodData {
     id: string;
@@ -53,6 +54,7 @@ function getRelativeTime(dateStr: string): string {
 
 export function NodCard({ nod, index = 0 }: NodCardProps) {
     const [copied, setCopied] = useState(false);
+    const toast = useToast();
 
     const handleCopy = () => {
         navigator.clipboard.writeText(nod.hash);
@@ -96,6 +98,22 @@ export function NodCard({ nod, index = 0 }: NodCardProps) {
                             )}>
                                 {isSent ? "Sent" : "Received"}
                             </span>
+
+                            {/* Copyable Nod ID Badge */}
+                            <button
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(nod.id);
+                                    toast.success("Nod ID copied to clipboard!");
+                                }}
+                                className="text-[10px] font-mono text-[var(--foreground-muted)] hover:text-[var(--foreground)] bg-[var(--accent)] hover:bg-[var(--border)] px-1.5 py-0.5 rounded border border-[var(--border)] transition-colors flex items-center gap-1 cursor-pointer select-all"
+                                title="Click to copy Nod ID"
+                            >
+                                <span>ID:</span>
+                                <span>{nod.id}</span>
+                                <HugeiconsIcon icon={Copy01Icon} className="w-2.5 h-2.5" />
+                            </button>
                         </div>
                         <StatusBadge status={nod.status} />
                     </div>

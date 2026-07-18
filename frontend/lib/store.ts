@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useStellarWallet } from '@/components/providers/stellar-provider';
+import { queryAgreementOnChain, queryUserAgreementsOnChain, fetchIPFSContent } from './soroban-query';
+
 
 export type NodStatus = 'draft' | 'awaiting' | 'nodded' | 'declined' | 'completed' | 'expired' | 'delivered' | 'disputed';
 
@@ -20,6 +22,8 @@ export interface Nod {
     createdByMe: boolean;
     expiresAt?: number;
     nonce?: number;
+    nonceHex?: string;
+    commitmentHex?: string;
     tokenAddress?: string;
     cautionAmount?: number;
     completedParties?: string[];
@@ -58,7 +62,7 @@ interface UseNodsReturn {
 
 const INITIAL_NODS: Nod[] = [];
 
-const STORAGE_KEY = 'nod_app_data_v7';
+const STORAGE_KEY = 'nod_app_data_v8';
 
 export function useNods(): UseNodsReturn {
     const [nods, setNods] = useState<Nod[]>([]);
@@ -70,7 +74,7 @@ export function useNods(): UseNodsReturn {
 
     useEffect(() => {
         // Clear old storage keys to ensure fresh data
-        const oldKeys = ['nod_app_data_v1', 'nod_app_data_v2', 'nod_app_data_v3', 'nod_app_data_v4', 'nod_app_data_v5', 'nod_app_data_v6'];
+        const oldKeys = ['nod_app_data_v1', 'nod_app_data_v2', 'nod_app_data_v3', 'nod_app_data_v4', 'nod_app_data_v5', 'nod_app_data_v6', 'nod_app_data_v7'];
         oldKeys.forEach(key => localStorage.removeItem(key));
 
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -118,6 +122,104 @@ export function useNods(): UseNodsReturn {
         } else {
             setUserProfile(null);
         }
+    }, [isConnected, address, isLoaded]);
+
+    useEffect(() => {
+        if (!isLoaded || !isConnected || !address) return;
+
+        let active = true;
+
+        const loadOnChainAgreements = async () => {
+            try {
+                // 1. Get all agreement IDs for the user from the contract
+                const agreementIds = await queryUserAgreementsOnChain(address);
+                if (agreementIds.length === 0 || !active) return;
+
+                const fetchedNods: Nod[] = [];
+
+                // 2. Fetch details for each agreement
+                for (const idHex of agreementIds) {
+                    if (!active) break;
+                    const onChain = await queryAgreementOnChain(idHex);
+                    if (onChain) {
+                        const existing = nods.find(n => n.agreementIdHex === idHex || n.hash === idHex);
+                        
+                        let text = existing?.text || "";
+                        let ipfsEncrypted = existing?.ipfsEncrypted;
+                        let encryptionMessage = existing?.encryptionMessage;
+
+                        if (!text && onChain.cid) {
+                            try {
+                                const ipfsContent = await fetchIPFSContent(onChain.cid);
+                                if (ipfsContent) {
+                                    if (ipfsContent.encryptedPayload) {
+                                        ipfsEncrypted = true;
+                                        text = ""; // Need decryption
+                                    } else {
+                                        text = typeof ipfsContent.text === "string" ? ipfsContent.text : "";
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Failed to fetch IPFS content for on-chain agreement:", e);
+                            }
+                        }
+
+                        const statusLabel = onChain.statusLabel.toLowerCase() as NodStatus;
+
+                        fetchedNods.push({
+                            id: existing?.id || idHex.slice(0, 8),
+                            text,
+                            hash: onChain.commitment || idHex,
+                            cid: onChain.cid || undefined,
+                            transactionHash: existing?.transactionHash || "",
+                            creator: onChain.initiator,
+                            counterparty: onChain.counterparties[0] || "",
+                            counterparties: onChain.counterparties,
+                            status: statusLabel,
+                            createdAt: new Date(onChain.createdAt * 1000).toLocaleDateString(),
+                            timestamp: new Date(onChain.createdAt * 1000).toLocaleTimeString(),
+                            createdByMe: onChain.initiator.toLowerCase() === address.toLowerCase(),
+                            expiresAt: onChain.expiresAt,
+                            tokenAddress: onChain.tokenAddress || undefined,
+                            cautionAmount: Number(onChain.cautionAmount),
+                            completedParties: onChain.completedParties,
+                            arbitrator: onChain.arbitrator || undefined,
+                            agreementIdHex: idHex,
+                            ipfsEncrypted,
+                            encryptionMessage
+                        });
+                    }
+                }
+
+                if (active) {
+                    setNods(prevNods => {
+                        const merged = [...prevNods];
+                        fetchedNods.forEach(fn => {
+                            const idx = merged.findIndex(mn => mn.agreementIdHex === fn.agreementIdHex || mn.hash === fn.hash);
+                            if (idx >= 0) {
+                                merged[idx] = {
+                                    ...merged[idx],
+                                    ...fn,
+                                    text: fn.text || merged[idx].text,
+                                };
+                            } else {
+                                merged.push(fn);
+                            }
+                        });
+                        saveToStorage(merged);
+                        return merged;
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to load user agreements from ledger:", err);
+            }
+        };
+
+        loadOnChainAgreements();
+
+        return () => {
+            active = false;
+        };
     }, [isConnected, address, isLoaded]);
 
     const saveToStorage = (updatedNods: Nod[], updatedKnownProfiles: Record<string, Profile> = knownProfiles) => {
@@ -179,23 +281,25 @@ export function useNods(): UseNodsReturn {
         return Object.values(knownProfiles).find(p => p.walletAddress.toLowerCase() === identifier.toLowerCase());
     };
 
-    const mappedNods = nods.map(nod => {
-        const resolvedCounterparty = nod.counterparty || (nod.counterparties && nod.counterparties[0]) || "";
-        if (!userProfile) {
+    const mappedNods = useMemo(() => {
+        return nods.map(nod => {
+            const resolvedCounterparty = nod.counterparty || (nod.counterparties && nod.counterparties[0]) || "";
+            if (!userProfile) {
+                return {
+                    ...nod,
+                    counterparty: resolvedCounterparty
+                };
+            }
+            const userWallet = userProfile.walletAddress;
+            const userUser = userProfile.username.toLowerCase();
+            const isCreator = nod.creator === userWallet || nod.creator.toLowerCase() === userUser;
             return {
                 ...nod,
-                counterparty: resolvedCounterparty
+                counterparty: resolvedCounterparty,
+                createdByMe: isCreator
             };
-        }
-        const userWallet = userProfile.walletAddress;
-        const userUser = userProfile.username.toLowerCase();
-        const isCreator = nod.creator === userWallet || nod.creator.toLowerCase() === userUser;
-        return {
-            ...nod,
-            counterparty: resolvedCounterparty,
-            createdByMe: isCreator
-        };
-    });
+        });
+    }, [nods, userProfile]);
 
     const getNodById = (id: string) => mappedNods.find(n => n.id === id);
 

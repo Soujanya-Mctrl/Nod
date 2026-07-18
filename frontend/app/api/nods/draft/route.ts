@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { Keypair } from "@stellar/stellar-sdk";
+import crypto from "crypto";
 
 // Simple in-memory storage for the "thin relay"
 // NOTE: This will reset when the server restarts. 
@@ -60,5 +62,57 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: "Draft not found" }, { status: 404 });
     }
 
-    return NextResponse.json(draft);
+    // Check if the request is authenticated by a participant
+    const authAddress = req.headers.get("x-auth-address");
+    const authSignature = req.headers.get("x-auth-signature");
+    const authChallenge = req.headers.get("x-auth-challenge");
+
+    let isParticipant = false;
+    if (authAddress && authSignature && authChallenge) {
+        try {
+            const keypair = Keypair.fromPublicKey(authAddress);
+            const prefix = "Stellar Signed Message:\n";
+            const messageBuffer = Buffer.from(prefix + authChallenge, "utf8");
+            const messageHash = crypto.createHash("sha256").update(messageBuffer).digest();
+            let signatureBuffer: Buffer;
+            if (/^[0-9a-fA-F]{128}$/.test(authSignature)) {
+                signatureBuffer = Buffer.from(authSignature, "hex");
+            } else {
+                signatureBuffer = Buffer.from(authSignature, "base64");
+            }
+            const isValid = keypair.verify(messageHash, signatureBuffer);
+
+            if (isValid) {
+                const isInitiator = draft.initiator?.toLowerCase() === authAddress.toLowerCase();
+                const isCounterparty = draft.counterparties?.some(
+                    (cp: string) => cp.toLowerCase() === authAddress.toLowerCase()
+                );
+                const isArbitrator = draft.arbitrator?.toLowerCase() === authAddress.toLowerCase();
+
+                if (isInitiator || isCounterparty || isArbitrator) {
+                    isParticipant = true;
+                }
+            }
+        } catch (err: any) {
+            console.error("[Draft API] Signature verification threw error:", err.message);
+        }
+    }
+
+    if (isParticipant) {
+        return NextResponse.json(draft);
+    } else {
+        // Redact the agreement text for non-participants
+        const redactedDraft = {
+            ...draft,
+            text: ""
+        };
+        return NextResponse.json(redactedDraft);
+    }
 }
+
+export async function DELETE() {
+    pendingAgreements.clear();
+    console.log("[Relay] All pending agreements cleared");
+    return NextResponse.json({ success: true, message: "All pending agreements cleared" });
+}
+

@@ -15,6 +15,8 @@ export interface NodSharePackage {
     expiresAt?: number;
     ipfsEncrypted?: boolean;
     cautionAmount?: number;
+    nonceHex?: string;
+    commitmentHex?: string;
 }
 
 function encodeBase64Url(value: string): string {
@@ -43,6 +45,8 @@ export async function buildNodSharePackage(nod: {
     expiresAt?: number;
     ipfsEncrypted?: boolean;
     cautionAmount?: number;
+    nonceHex?: string;
+    commitmentHex?: string;
 }): Promise<NodSharePackage> {
     return {
         version: "nod-share-v1",
@@ -59,6 +63,8 @@ export async function buildNodSharePackage(nod: {
         expiresAt: nod.expiresAt,
         ipfsEncrypted: nod.ipfsEncrypted,
         cautionAmount: nod.cautionAmount,
+        nonceHex: nod.nonceHex,
+        commitmentHex: nod.commitmentHex,
     };
 }
 
@@ -95,13 +101,13 @@ export async function encryptPayloadWithRandomKey(plaintextStr: string): Promise
     const keyBytes = crypto.getRandomValues(new Uint8Array(32));
     const key = await crypto.subtle.importKey(
         "raw",
-        keyBytes,
+        keyBytes.buffer as ArrayBuffer,
         { name: "AES-GCM" },
         false,
         ["encrypt", "decrypt"]
     );
     const plaintext = new TextEncoder().encode(plaintextStr);
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv.buffer as ArrayBuffer }, key, plaintext.buffer as ArrayBuffer);
     return {
         ciphertextHex: bytesToHex(new Uint8Array(ciphertext)),
         ivHex: bytesToHex(iv),
@@ -117,13 +123,13 @@ export async function decryptPayloadWithKey(ciphertextHex: string, ivHex: string
     const keyBytes = hexToBytes(keyHex);
     const key = await crypto.subtle.importKey(
         "raw",
-        keyBytes as any,
+        keyBytes.buffer as ArrayBuffer,
         { name: "AES-GCM" },
         false,
         ["encrypt", "decrypt"]
     );
     const ciphertext = hexToBytes(ciphertextHex);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as any }, key, ciphertext as any);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv.buffer as ArrayBuffer }, key, ciphertext.buffer as ArrayBuffer);
     return new TextDecoder().decode(decrypted);
 }
 
@@ -164,6 +170,7 @@ export async function registerGatedShare(params: {
     encryptedPayload: string;
     iv: string;
     key: string;
+    sharerAddress?: string;
 }): Promise<string> {
     const res = await fetch("/api/nods/share", {
         method: "POST",
@@ -174,7 +181,8 @@ export async function registerGatedShare(params: {
             allowedAddress: params.allowedAddress,
             encryptedPayload: params.encryptedPayload,
             iv: params.iv,
-            key: params.key
+            key: params.key,
+            sharerAddress: params.sharerAddress
         })
     });
     

@@ -57,7 +57,7 @@ export async function deriveSharedKey(signatures: Array<string | Uint8Array>): P
         .join(":");
     const keyMaterial = await crypto.subtle.digest(
         "SHA-256",
-        new TextEncoder().encode(`nod-ipfs-aes-gcm-v1:${normalized}`),
+        new TextEncoder().encode(`nod-ipfs-aes-gcm-v1:${normalized}`).buffer as ArrayBuffer,
     );
 
     return crypto.subtle.importKey("raw", keyMaterial, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
@@ -72,7 +72,7 @@ export async function encryptAgreementForIPFS(params: {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const sharedSecret = await deriveSharedKey(params.signatures);
     const plaintext = new TextEncoder().encode(JSON.stringify(params.agreementData));
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, sharedSecret, plaintext);
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv.buffer as ArrayBuffer }, sharedSecret, plaintext.buffer as ArrayBuffer);
 
     return {
         encrypted: true,

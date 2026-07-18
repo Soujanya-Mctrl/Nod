@@ -3,7 +3,7 @@
 import React, { Suspense } from "react";
 import dynamic from "next/dynamic";
 import { SidebarProvider } from "./sidebar-context";
-import { MobileHeader } from "./mobile-header";
+import { Topbar } from "./topbar";
 
 // Lazy load the sidebar
 const Sidebar = dynamic(() => import("./sidebar").then(mod => ({ default: mod.Sidebar })), {
@@ -25,7 +25,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <Sidebar />
                 </Suspense>
                 <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-                    <MobileHeader />
+                    <Topbar />
                     <main className="flex-1 overflow-y-auto p-6 lg:p-8">
                         <div className="max-w-7xl mx-auto">
                             {children}

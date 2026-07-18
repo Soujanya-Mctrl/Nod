@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Keypair } from "@stellar/stellar-sdk";
+import crypto from "crypto";
 
 const globalShares = global as typeof globalThis & {
     sharesStore?: Map<string, any>;
@@ -36,8 +37,15 @@ export async function POST(req: Request) {
             const keypair = Keypair.fromPublicKey(address);
             const prefix = "Stellar Signed Message:\n";
             const messageBuffer = Buffer.from(prefix + challenge, "utf8");
-            const signatureBuffer = Buffer.from(signature, "hex");
-            isValid = keypair.verify(messageBuffer, signatureBuffer);
+            const messageHash = crypto.createHash("sha256").update(messageBuffer).digest();
+            // Handle both hex and base64 signature formats
+            let signatureBuffer: Buffer;
+            if (/^[0-9a-fA-F]{128}$/.test(signature)) {
+                signatureBuffer = Buffer.from(signature, "hex");
+            } else {
+                signatureBuffer = Buffer.from(signature, "base64");
+            }
+            isValid = keypair.verify(messageHash, signatureBuffer);
         } catch (err: any) {
             console.error("[Decrypt API] Signature verification threw error:", err.message);
             return NextResponse.json({ error: `Invalid signature format: ${err.message}` }, { status: 400 });

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@aztec/bb.js": "5.0.0-nightly.20260324",
+    "@creit.tech/stellar-wallets-kit": "^2.5.0",
     "@hugeicons/core-free-icons": "^3.1.1",
     "@hugeicons/react": "^1.1.5",
     "@noir-lang/noir_js": "^1.0.0-beta.20",

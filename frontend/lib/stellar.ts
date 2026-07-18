@@ -17,7 +17,7 @@ export const STELLAR_TESTNET_RPC = "https://soroban-testnet.stellar.org";
 export const STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
 
 // Replace with your actual deployed Soroban contract ID on Testnet
-export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "CCAM5XI53OMFPKIMRHKZJMSJXYXJAYMPPX7TG3TKJ5NKOPDSQEU4QIMV";
+export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "CAM54I42XTBF7OX3SM3OXR6J4AERRQ4T4EEVYKPST2IPHZYT6DYR5ETH";
 
 /**
  * Fetches sequence number for a Stellar account
@@ -52,14 +52,16 @@ export async function buildSealAgreementTx(params: {
     createdAt: number;
     expiresAt: number;
     agreementIdHex: string;
+    zkCommitmentHex: string;
     tokenAddress?: string;
     cautionAmount?: number;
     arbitrator?: string;
 }): Promise<string> {
-    const { cid, initiator, counterparties, createdAt, expiresAt, agreementIdHex, tokenAddress, cautionAmount, arbitrator } = params;
+    const { cid, initiator, counterparties, createdAt, expiresAt, agreementIdHex, zkCommitmentHex, tokenAddress, cautionAmount, arbitrator } = params;
 
     const sourceAccount = await getStellarAccount(initiator);
     const agreementBytes = hexToBytes(agreementIdHex);
+    const commitmentBytes = hexToBytes(zkCommitmentHex);
 
     const scValCid = nativeToScVal(cid);
     const scValInitiator = new Address(initiator).toScVal();
@@ -80,6 +82,7 @@ export async function buildSealAgreementTx(params: {
     );
 
     const scValArbitrator = arbitrator ? nativeToScVal(new Address(arbitrator)) : nativeToScVal(null);
+    const scValCommitment = nativeToScVal(Buffer.from(commitmentBytes));
 
     const op = Operation.invokeContractFunction({
         contract: CONTRACT_ID,
@@ -93,7 +96,8 @@ export async function buildSealAgreementTx(params: {
             scValAgreementId,
             scValTokenAddress,
             scValCautionAmount,
-            scValArbitrator
+            scValArbitrator,
+            scValCommitment
         ]
     });
 
@@ -148,16 +152,30 @@ export async function buildAcceptAgreementTx(params: {
 }
 
 /**
- * Signs a transaction XDR using Freighter Wallet
+ * Signs a transaction XDR using Freighter Wallet with Level 2 Error Handling
  */
 export async function signTxWithFreighter(xdrString: string): Promise<string> {
-    const res = await signTransaction(xdrString, {
-        networkPassphrase: STELLAR_NETWORK_PASSPHRASE
-    });
-    if (res.error) {
-        throw new Error(`Freighter signing failed: ${res.error}`);
+    try {
+        const res = await signTransaction(xdrString, {
+            networkPassphrase: STELLAR_NETWORK_PASSPHRASE
+        });
+        if (res.error) {
+            const errLower = res.error.toLowerCase();
+            if (errLower.includes("user declined") || errLower.includes("rejected") || errLower.includes("user rejected")) {
+                throw new Error("USER_REJECTED: User cancelled or rejected transaction signing.");
+            }
+            if (errLower.includes("not found") || errLower.includes("not installed")) {
+                throw new Error("WALLET_NOT_FOUND: Wallet extension missing or not detected.");
+            }
+            throw new Error(`Freighter signing failed: ${res.error}`);
+        }
+        return res.signedTxXdr;
+    } catch (err: any) {
+        if (err.message?.startsWith("USER_REJECTED") || err.message?.startsWith("WALLET_NOT_FOUND")) {
+            throw err;
+        }
+        throw new Error(`Wallet signing error: ${err.message || err}`);
     }
-    return res.signedTxXdr;
 }
 
 /**
@@ -182,13 +200,25 @@ export async function signMessageWithFreighter(message: string, address?: string
 }
 
 /**
- * Submits a fully signed transaction to Stellar Testnet
+ * Submits a fully signed transaction to Stellar Testnet with Level 2 Error Handling
  */
 export async function submitStellarTx(xdrString: string): Promise<string> {
-    const server = new Horizon.Server(STELLAR_TESTNET_HORIZON);
-    const tx = TransactionBuilder.fromXDR(xdrString, STELLAR_NETWORK_PASSPHRASE);
-    const result = await server.submitTransaction(tx);
-    return result.hash;
+    try {
+        const server = new Horizon.Server(STELLAR_TESTNET_HORIZON);
+        const tx = TransactionBuilder.fromXDR(xdrString, STELLAR_NETWORK_PASSPHRASE);
+        const result = await server.submitTransaction(tx);
+        return result.hash;
+    } catch (err: any) {
+        const extras = err?.response?.data?.extras?.result_codes;
+        const txCode = extras?.transaction || "";
+        const opCodes = (extras?.operations || []).join(" ");
+        const errMsg = `${txCode} ${opCodes} ${err.message || ""}`.toLowerCase();
+
+        if (errMsg.includes("tx_bad_seq") || errMsg.includes("tx_insufficient_balance") || errMsg.includes("op_underfunded") || errMsg.includes("not found")) {
+            throw new Error("INSUFFICIENT_BALANCE: Stellar account unfunded or insufficient XLM testnet balance. Fund via Friendbot.");
+        }
+        throw new Error(`Stellar submission failed: ${err.message || txCode || "RPC error"}`);
+    }
 }
 
 /**
@@ -444,3 +474,45 @@ export async function buildAutoCompleteDeliveredTx(params: {
     const preparedTx = await rpcServer.prepareTransaction(tx);
     return preparedTx.toXDR();
 }
+
+/**
+ * Builds a transaction to store a ZK proof hash on Soroban
+ */
+export async function buildStoreProofHashTx(params: {
+    prover: string;
+    agreementIdHex: string;
+    proofHashHex: string;
+}): Promise<string> {
+    const { prover, agreementIdHex, proofHashHex } = params;
+
+    const sourceAccount = await getStellarAccount(prover);
+    const agreementBytes = hexToBytes(agreementIdHex);
+    const proofHashBytes = hexToBytes(proofHashHex);
+
+    const scValAgreementId = nativeToScVal(Buffer.from(agreementBytes));
+    const scValProofHash = nativeToScVal(Buffer.from(proofHashBytes));
+    const scValProver = new Address(prover).toScVal();
+
+    const op = Operation.invokeContractFunction({
+        contract: CONTRACT_ID,
+        function: "store_proof_hash",
+        args: [
+            scValAgreementId,
+            scValProofHash,
+            scValProver
+        ]
+    });
+
+    const tx = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: STELLAR_NETWORK_PASSPHRASE,
+    })
+        .addOperation(op)
+        .setTimeout(300)
+        .build();
+
+    const rpcServer = new rpc.Server(STELLAR_TESTNET_RPC);
+    const preparedTx = await rpcServer.prepareTransaction(tx);
+    return preparedTx.toXDR();
+}
+

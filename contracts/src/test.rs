@@ -38,6 +38,7 @@ fn test_seal_and_complete_no_caution() {
         &None,
         &0,
         &None,
+        &BytesN::from_array(&env, &[0; 32]),
     );
 
     assert_eq!(agreement.status, NodStatus::Awaiting);
@@ -100,6 +101,7 @@ fn test_seal_and_complete_with_caution() {
         &Some(token_address.clone()),
         &100,
         &None,
+        &BytesN::from_array(&env, &[0; 32]),
     );
 
     assert_eq!(agreement.status, NodStatus::Awaiting);
@@ -162,6 +164,7 @@ fn test_claim_expired_escrow() {
         &Some(token_address.clone()),
         &100,
         &None,
+        &BytesN::from_array(&env, &[0; 32]),
     );
     client.accept_agreement(&agreement_id, &counterparty);
 
@@ -207,6 +210,7 @@ fn test_roommates_scenario_multi_party() {
         &None,
         &0,
         &None,
+        &BytesN::from_array(&env, &[0; 32]),
     );
 
     assert_eq!(agreement.status, NodStatus::Awaiting);
@@ -259,6 +263,7 @@ fn test_arbitration_dispute_resolution() {
         &Some(token_address.clone()),
         &100,
         &Some(arbitrator.clone()),
+        &BytesN::from_array(&env, &[0; 32]),
     );
 
     assert_eq!(agreement.status, NodStatus::Awaiting);
@@ -320,6 +325,7 @@ fn test_auto_complete_delivered() {
         &Some(token_address.clone()),
         &100,
         &None,
+        &BytesN::from_array(&env, &[0; 32]),
     );
     client.accept_agreement(&agreement_id, &counterparty);
 
@@ -339,4 +345,60 @@ fn test_auto_complete_delivered() {
     assert_eq!(token_client.balance(&initiator), 1000);
     assert_eq!(token_client.balance(&counterparty), 1000);
     assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn test_proof_hash_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(NodContract, ());
+    let client = NodContractClient::new(&env, &contract_id);
+
+    let initiator = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let malicious = Address::generate(&env);
+
+    let mut counterparties = Vec::new(&env);
+    counterparties.push_back(counterparty.clone());
+
+    let cid = String::from_str(&env, "QmXoypizjW3WknFixtNs4TxsjG6beUueCWK3wQyVbB2t2T");
+    let agreement_id = BytesN::from_array(&env, &[7; 32]);
+    let proof_hash = BytesN::from_array(&env, &[42; 32]);
+
+    // 1. Agreement doesn't exist yet, storing should panic
+    let res = client.try_store_proof_hash(&agreement_id, &proof_hash, &initiator);
+    assert!(res.is_err());
+
+    // 2. Seal the agreement
+    client.seal_agreement(
+        &cid,
+        &initiator,
+        &counterparties,
+        &1000,
+        &0,
+        &agreement_id,
+        &None,
+        &0,
+        &None,
+        &BytesN::from_array(&env, &[0; 32]),
+    );
+
+    // 3. Storing proof hash by malicious user (not a participant) should panic
+    let res = client.try_store_proof_hash(&agreement_id, &proof_hash, &malicious);
+    assert!(res.is_err());
+
+    // 4. Storing proof hash by initiator should succeed
+    client.store_proof_hash(&agreement_id, &proof_hash, &initiator);
+
+    // 5. Retrieve the proof hash and verify matches
+    let retrieved = client.get_proof_hash(&agreement_id);
+    assert_eq!(retrieved, Some(proof_hash.clone()));
+
+    // 6. Storing a new proof hash by counterparty should succeed and overwrite
+    let new_proof_hash = BytesN::from_array(&env, &[43; 32]);
+    client.store_proof_hash(&agreement_id, &new_proof_hash, &counterparty);
+
+    let retrieved_new = client.get_proof_hash(&agreement_id);
+    assert_eq!(retrieved_new, Some(new_proof_hash));
 }

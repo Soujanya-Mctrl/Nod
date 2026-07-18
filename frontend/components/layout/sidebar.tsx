@@ -8,7 +8,8 @@ import {
     GridViewIcon,
     PencilEdit01Icon,
     Search01Icon,
-    Menu01Icon
+    Menu01Icon,
+    Clock01Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ const navItems = [
     { href: "/", label: "Dashboard", icon: GridViewIcon },
     { href: "/create", label: "Create Nod", icon: PencilEdit01Icon },
     { href: "/verify", label: "Verify Nod", icon: Search01Icon },
+    { href: "/activity", label: "Activity", icon: Clock01Icon },
 ];
 
 export function Sidebar() {

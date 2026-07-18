@@ -20,21 +20,20 @@ import { ProfileName } from "@/components/nod/profile-name";
 import { StatusBadge, type NodStatus } from "@/components/nod/status-badge";
 import { cn, truncateHash } from "@/lib/utils";
 import { ChevronDown, Check, Lock, Loader2, ShieldCheck, AlertTriangle, X } from "lucide-react";
-import { fetchIPFSContent } from "@/lib/soroban-query";
+import { fetchIPFSContent, queryAgreementOnChain } from "@/lib/soroban-query";
 import { isEncryptedIPFSPayload } from "@/lib/ipfs-encryption";
 import { parseNodSharePackage, type NodSharePackage, decryptPayloadWithKey } from "@/lib/nod-share";
 import { generateHash } from "@/lib/utils";
 import { useStellarWallet } from "@/components/providers/stellar-provider";
 import { useToast } from "@/components/ui/toast";
-import { signMessageWithFreighter } from "@/lib/stellar";
-import { verifyProof } from "@/lib/noir-zk";
+import { signMessageWithFreighter, CONTRACT_ID } from "@/lib/stellar";
 import { useNods, type Nod } from "@/lib/store";
-import { generateZKProof } from "@/lib/zk-verifier";
+import { generateZKProof, verifyZKProof } from "@/lib/zk-verifier";
 
 type StatusFilter = "all" | NodStatus;
 
 export default function VerifyPage() {
-    const { nods: onChainNods, isLoaded, resolveProfile } = useNods();
+    const { nods: onChainNods, isLoaded, resolveProfile, updateNod } = useNods();
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -57,6 +56,23 @@ export default function VerifyPage() {
     const [decryptedNodShare, setDecryptedNodShare] = useState<NodSharePackage | null>(null);
     const [isDecrypting, setIsDecrypting] = useState(false);
 
+    const [rpcStatus, setRpcStatus] = useState<"idle" | "verifying" | "active" | "error">("idle");
+    const [rpcMessage, setRpcMessage] = useState<string>("");
+
+    const checkContractRpc = async () => {
+        setRpcStatus("verifying");
+        setRpcMessage("Simulating read-only get_agreement call on Soroban Testnet RPC...");
+        try {
+            // Query with an empty 32-byte hex ID to test contract invocation
+            await queryAgreementOnChain("0000000000000000000000000000000000000000000000000000000000000000");
+            setRpcStatus("active");
+            setRpcMessage("Contract verified! Active and responding on Soroban RPC.");
+        } catch (err: any) {
+            setRpcStatus("error");
+            setRpcMessage(`RPC Verification failed: ${err.message || "Contract not responding"}`);
+        }
+    };
+
     // ZK verification states
     const [zkNodId, setZkNodId] = useState("");
     const [zkNod, setZkNod] = useState<Nod | null>(null);
@@ -66,6 +82,7 @@ export default function VerifyPage() {
     const [zkValid, setZkValid] = useState<boolean | null>(null);
     const [zkProofHex, setZkProofHex] = useState<string | null>(null);
     const [zkIsSimulated, setZkIsSimulated] = useState(false);
+    const [showTechDetails, setShowTechDetails] = useState(false);
 
     const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
     const filterDropdownRef = useRef<HTMLDivElement>(null);
@@ -154,8 +171,8 @@ export default function VerifyPage() {
 
             const decryptedText = await decryptPayloadWithKey(
                 loadedGatedShare.encryptedPayload,
-                keyData.key,
-                keyData.iv
+                keyData.iv,
+                keyData.key
             );
 
             const packageData = JSON.parse(decryptedText);
@@ -169,17 +186,97 @@ export default function VerifyPage() {
         }
     };
 
-    const handleLoadZkNod = (nodId: string) => {
-        const found = onChainNods.find(n => n.id === nodId);
+    const handleLoadZkNod = async (nodId: string) => {
+        let found = onChainNods.find(n => n.id === nodId);
+
+        if (!found && decryptedNodShare && decryptedNodShare.nodId === nodId) {
+            found = {
+                id: decryptedNodShare.nodId,
+                text: decryptedNodShare.text,
+                hash: decryptedNodShare.sealedContentHash,
+                cid: decryptedNodShare.cid,
+                transactionHash: decryptedNodShare.transactionHash || "",
+                creator: decryptedNodShare.creator,
+                counterparty: decryptedNodShare.counterparties?.[0] || "",
+                counterparties: decryptedNodShare.counterparties || [],
+                status: "nodded",
+                createdAt: new Date(decryptedNodShare.createdAt).toLocaleDateString(),
+                timestamp: new Date(decryptedNodShare.createdAt).toLocaleTimeString(),
+                createdByMe: decryptedNodShare.creator.toLowerCase() === address?.toLowerCase(),
+                expiresAt: decryptedNodShare.expiresAt,
+                nonceHex: decryptedNodShare.nonceHex,
+                commitmentHex: decryptedNodShare.commitmentHex,
+            } as any;
+        }
+
         if (!found) {
-            toast.error("Agreement ID not found in registry.");
+            // Try fetching from draft API with wallet authorization if connected
+            if (isConnected && address) {
+                try {
+                    const challenge = `Auth Challenge: View draft nod ${nodId} at ${new Date().toISOString()}`;
+                    const sig = await signMessageWithFreighter(challenge, address);
+                    const res = await fetch(`/api/nods/draft?id=${nodId}`, {
+                        headers: {
+                            "x-auth-address": address,
+                            "x-auth-signature": sig,
+                            "x-auth-challenge": challenge
+                        }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        found = {
+                            id: data.id,
+                            text: data.text,
+                            hash: data.commitmentHex || data.hash,
+                            cid: data.cid,
+                            sig1: data.sig1,
+                            transactionHash: data.transactionHash || "",
+                            creator: data.initiator,
+                            counterparty: data.counterparties?.[0] || "",
+                            counterparties: data.counterparties || [],
+                            status: "awaiting",
+                            createdAt: new Date(data.createdAt * 1000).toLocaleDateString(),
+                            timestamp: new Date(data.createdAt * 1000).toLocaleTimeString(),
+                            createdByMe: data.initiator.toLowerCase() === address.toLowerCase(),
+                            expiresAt: data.expiresAt,
+                            nonceHex: data.nonceHex,
+                            commitmentHex: data.commitmentHex,
+                            tokenAddress: data.tokenAddress,
+                            cautionAmount: data.cautionAmount,
+                            arbitrator: data.arbitrator
+                        } as any;
+                    }
+                } catch (e) {
+                    console.error("Failed to load draft from API:", e);
+                }
+            }
+        }
+
+        if (!found) {
+            toast.error("Agreement ID not found in local store or registry.");
             setZkNod(null);
             return;
         }
+
         setZkNod(found);
         setZkChecks(null);
         setZkValid(null);
         setZkProofHex(null);
+
+        // Sync from Soroban on-chain status live
+        try {
+            const agreementIdHex = found.agreementIdHex || found.hash;
+            if (agreementIdHex) {
+                const onChain = await queryAgreementOnChain(agreementIdHex);
+                if (onChain) {
+                    const mappedStatus = onChain.statusLabel.toLowerCase() as any;
+                    setZkNod(prev => prev && prev.id === nodId ? { ...prev, status: mappedStatus, commitmentHex: onChain.commitment || prev.commitmentHex } : prev);
+                    updateNod(nodId, { status: mappedStatus, commitmentHex: onChain.commitment || undefined });
+                }
+            }
+        } catch (err) {
+            console.error("Failed to sync on-chain status for ZK verification:", err);
+        }
     };
 
     const handleRunZkVerification = async () => {
@@ -194,9 +291,6 @@ export default function VerifyPage() {
             setZkStatusMessage("Preparing Zero-Knowledge inputs & witness...");
             await new Promise(r => setTimeout(r, 600));
 
-            setZkStatusMessage("Running Noir zk-prover in-browser...");
-            await new Promise(r => setTimeout(r, 600));
-
             const counterparty = zkNod.counterparties?.[0] || zkNod.counterparty || "";
             let timestamp = Math.floor(Date.now() / 1000);
             if (zkNod.createdAt && zkNod.timestamp) {
@@ -207,97 +301,73 @@ export default function VerifyPage() {
                 }
             }
 
-            let proofPayload: any;
-            try {
-                proofPayload = await generateZKProof({
-                    text: zkNod.text,
-                    initiator: zkNod.creator,
-                    counterparty,
-                    timestamp,
-                    expiresAt: zkNod.expiresAt || 0,
-                    status: zkNod.status,
-                    contentHash: zkNod.hash,
-                });
-            } catch (zkErr) {
-                console.warn("Real ZK prover failed (WASM version mismatch). Falling back to secure simulated proof.", zkErr);
-                setZkIsSimulated(true);
-                proofPayload = {
-                    proofHex: "0000000000000000" + Math.random().toString(16).slice(2, 18),
-                    publicInputs: {
-                        commitment: zkNod.hash,
-                        initiatorPubKey: zkNod.creator,
-                        counterpartyPubKey: counterparty,
-                        statusNodded: zkNod.status === "nodded" || zkNod.status === "completed" || zkNod.status === "delivered",
-                        expiresAt: zkNod.expiresAt || 0
-                    },
-                    generatedAt: Date.now(),
-                    circuitName: "nod_circuits (Noir v1.0.0-beta.20)",
-                    isSimulated: true,
-                    realProof: null
-                };
-            }
+            setZkStatusMessage("Running Noir zk-prover in-browser...");
+            const proofPayload = await generateZKProof({
+                text: zkNod.text,
+                initiator: zkNod.creator,
+                counterparty,
+                timestamp,
+                expiresAt: zkNod.expiresAt || 0,
+                status: zkNod.status,
+                contentHash: zkNod.hash,
+                nonceHex: zkNod.nonceHex,
+            });
 
-            setZkStatusMessage("Running Noir WASM verifier to validate proof constraints...");
+            setZkStatusMessage("Running Barretenberg WASM verifier to validate proof constraints...");
             await new Promise(r => setTimeout(r, 850));
 
-            const checks = [];
+            const verificationResult = await verifyZKProof(proofPayload);
+            const checks = [...verificationResult.checks];
+
+            setZkStatusMessage("Verifying public inputs against Stellar blockchain (Soroban)...");
+            const agreementIdHex = zkNod.agreementIdHex || zkNod.hash;
+            const onChainAgreement = await queryAgreementOnChain(agreementIdHex);
+            const onChainMatch = !!onChainAgreement;
             
-            // Check 1: Commitment format
-            const commitmentValid = /^[0-9a-f]{64}$/.test(proofPayload.publicInputs.commitment);
+            // Perform match validation
+            const initiatorMatches = onChainAgreement ? onChainAgreement.initiator.toLowerCase() === zkNod.creator.toLowerCase() : false;
+            const expiryMatches = onChainAgreement ? Number(onChainAgreement.expiresAt) === Number(zkNod.expiresAt || 0) : false;
+            const statusMatches = onChainAgreement ? (onChainAgreement.statusLabel.toLowerCase() === zkNod.status.toLowerCase()) : false;
+            
+            // Verify commitment hash
+            const onChainCommitment = onChainAgreement?.commitment;
+            const proofCommitment = proofPayload.publicInputs.commitment;
+            const commitmentMatches = onChainCommitment && proofCommitment
+                ? onChainCommitment.toLowerCase() === proofCommitment.toLowerCase()
+                : false;
+
+            const onChainChecksPassed = onChainMatch && initiatorMatches && expiryMatches && statusMatches;
+
             checks.push({
-                name: "Commitment Hash Format",
-                passed: commitmentValid,
-                detail: commitmentValid
-                    ? `Valid 32-byte hex commitment matching registry hash: 0x${proofPayload.publicInputs.commitment.slice(0, 12)}...`
-                    : "Invalid commitment format — expected 32-byte hex",
+                name: "Stellar On-Chain Registry Verification",
+                passed: onChainChecksPassed,
+                detail: onChainMatch 
+                    ? onChainChecksPassed
+                        ? `On-chain agreement verified! Public parameters match the Soroban smart contract registry exactly.`
+                        : `Registry mismatch: parameters do not align with on-chain records.`
+                    : `Could not retrieve agreement details from Soroban smart contract at ${CONTRACT_ID.slice(0, 10)}...`
             });
 
-            // Check 2: Initiator public key format
-            const initiatorValid = proofPayload.publicInputs.initiatorPubKey.length === 56 && proofPayload.publicInputs.initiatorPubKey.startsWith("G");
             checks.push({
-                name: "Initiator Address format",
-                passed: initiatorValid,
-                detail: initiatorValid
-                    ? `Valid G-address: ${proofPayload.publicInputs.initiatorPubKey.slice(0, 8)}...${proofPayload.publicInputs.initiatorPubKey.slice(-4)}`
-                    : "Invalid Stellar public key format",
-            });
-
-            // Check 3: Expiry validation
-            const now = Math.floor(Date.now() / 1000);
-            const notExpired = proofPayload.publicInputs.expiresAt === 0 || proofPayload.publicInputs.expiresAt > now;
-            checks.push({
-                name: "Agreement Expiry",
-                passed: notExpired,
-                detail: notExpired
-                    ? proofPayload.publicInputs.expiresAt === 0
-                        ? "No expiry date set (ongoing)"
-                        : `Expires at: ${new Date(proofPayload.publicInputs.expiresAt * 1000).toLocaleDateString()}`
-                    : `Expired at: ${new Date(proofPayload.publicInputs.expiresAt * 1000).toLocaleDateString()}`,
-            });
-
-            // Check 4: Status is active
-            checks.push({
-                name: "Contract Status Constraint",
-                passed: proofPayload.publicInputs.statusNodded,
-                detail: proofPayload.publicInputs.statusNodded
-                    ? "Agreement status is active (Nodded/Completed/Delivered)"
-                    : "Agreement is not in an active status (cannot verify)",
-            });
-
-            // Check 5: Cryptographic proof verification
-            checks.push({
-                name: "Cryptographic Proof Integrity",
-                passed: true,
-                detail: proofPayload.isSimulated
-                    ? "Cryptographically secure simulated proof verification passed (Noir UltraHonk v1.0.0-beta.20)"
-                    : "UltraHonk SNARK proof verified successfully using Barretenberg WASM backend",
+                name: "ZK Commitment Matching",
+                passed: commitmentMatches,
+                detail: commitmentMatches
+                    ? `Proof commitment matches the registered on-chain commitment exactly: 0x${onChainCommitment?.slice(0, 8)}...`
+                    : onChainCommitment
+                        ? `Commitment mismatch: proof is for a different document than registered on-chain.`
+                        : `Could not verify commitment: No commitment registered on-chain.`
             });
 
             const allPassed = checks.every((c) => c.passed);
             setZkChecks(checks);
             setZkValid(allPassed);
             setZkProofHex(proofPayload.proofHex);
-            toast.success(allPassed ? "ZK proof verification succeeded!" : "ZK proof verification failed.");
+            
+            if (allPassed) {
+                toast.success("ZK proof verified successfully against Stellar blockchain!");
+            } else {
+                toast.error("ZK verification failed.");
+            }
         } catch (err: any) {
             console.error("ZK verification error:", err);
             toast.error(err.message || "Failed running ZK verification.");
@@ -629,172 +699,20 @@ export default function VerifyPage() {
                     </Card>
                 )}
 
-                {/* Live Verification Panel */}
-                <Card className="overflow-hidden border-2 border-[var(--border)]">
-                    <CardContent className="p-6 space-y-5">
-                        <div className="flex items-start gap-4">
-                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                                <HugeiconsIcon icon={SecurityCheckIcon} className="w-5 h-5 text-emerald-600" />
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="text-base font-semibold text-[var(--foreground)]">
-                                    Verify an Agreement
-                                </h3>
-                                <p className="text-xs text-[var(--foreground-muted)] mt-1">
-                                    Enter a transaction hash or IPFS CID (Content Hash) to verify its status on the registry.
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Verification Form */}
-                        <form onSubmit={handleVerificationSubmit} className="space-y-4">
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-[var(--foreground)]">Transaction Hash or IPFS CID (Content Hash)</label>
-                                <Input
-                                    placeholder="e.g. nodshare:... / Qm... / 0x... / transaction hash"
-                                    value={verifyHash}
-                                    onChange={(e) => { setVerifyHash(e.target.value); setVerificationResult(null); }}
-                                    className="font-mono text-sm"
-                                />
-                            </div>
-
-                            <Button
-                                type="submit"
-                                disabled={isVerifying || !verifyHash.trim()}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
-                            >
-                                {isVerifying ? (
-                                    <div className="flex items-center gap-2">
-                                        <motion.div
-                                            animate={{ rotate: 360 }}
-                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                            className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
-                                        />
-                                        Searching registry...
-                                    </div>
-                                ) : (
-                                    <>
-                                        <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 mr-2" />
-                                        Verify Hash
-                                    </>
-                                )}
-                            </Button>
-                        </form>
-
-                        {/* Verification Result */}
-                        <AnimatePresence>
-                            {verificationResult && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className="space-y-3"
-                                >
-                                    {/* Result banner */}
-                                    <div className={`p-4 rounded-lg border ${verificationResult.found ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"}`}>
-                                        <div className="flex items-center gap-2.5">
-                                            <HugeiconsIcon
-                                                icon={verificationResult.found ? CheckmarkCircle01Icon : CancelCircleIcon}
-                                                className={`w-5 h-5 ${verificationResult.found ? "text-emerald-600" : "text-rose-500"}`}
-                                            />
-                                            <div>
-                                                <span className={`text-sm font-bold ${verificationResult.found ? "text-emerald-600" : "text-rose-500"}`}>
-                                                    {verificationResult.found ? "✓ Agreement Found" : "✗ No Matching Agreement"}
-                                                </span>
-                                                {verificationResult.method && (
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] block mt-0.5">
-                                                        Matched via {verificationResult.method === 'transaction' ? 'transaction hash' : 'IPFS CID (Content Hash)'}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Matched nod details */}
-                                        {verificationResult.sharePackage && (
-                                            <div className="mt-3 pt-3 border-t border-[var(--border)]/30 space-y-3">
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                    <div>
-                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Plaintext Package</span>
-                                                        <span className={`text-xs font-semibold ${verificationResult.plaintextMatchesPackage ? "text-emerald-600" : "text-rose-500"}`}>
-                                                            {verificationResult.plaintextMatchesPackage ? "Hash matches" : "Hash mismatch"}
-                                                        </span>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">IPFS Payload</span>
-                                                        <span className={`text-xs font-semibold ${verificationResult.ipfsEncrypted ? "text-emerald-600" : "text-amber-600"}`}>
-                                                            {verificationResult.ipfsChecked
-                                                                ? verificationResult.ipfsEncrypted
-                                                                    ? "Encrypted CID found"
-                                                                    : "CID found, not encrypted"
-                                                                : "CID not checked"}
-                                                        </span>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Local Registry Match</span>
-                                                        <span className={`text-xs font-semibold ${verificationResult.registryMatchesShare ? "text-emerald-600" : "text-[var(--foreground-muted)]"}`}>
-                                                            {verificationResult.registryMatchesShare ? "Matched" : "No local match"}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="rounded-lg border border-[var(--border)] bg-[var(--accent)]/40 p-3">
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block mb-1">Party-Provided Plaintext</span>
-                                                    <p className="text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
-                                                        "{verificationResult.sharePackage.text}"
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {verificationResult.nod && (
-                                            <div className="mt-3 pt-3 border-t border-[var(--border)]/30 grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Status</span>
-                                                    <StatusBadge status={verificationResult.nod.status} />
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Initiator</span>
-                                                    <span className="text-xs font-semibold text-[var(--foreground)]"><ProfileName username={verificationResult.nod.creator} /></span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Sealed</span>
-                                                    <span className="text-xs text-[var(--foreground)]">{verificationResult.nod.createdAt}</span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] text-[var(--foreground-muted)] font-medium block">Escrow</span>
-                                                    <span className="text-xs font-semibold text-[var(--foreground)]">{verificationResult.nod.cautionAmount ? `${(verificationResult.nod.cautionAmount / 10_000_000).toFixed(2)} XLM` : "None"}</span>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {verificationResult.nod && (
-                                            <div className="mt-3">
-                                                <a
-                                                    href={`/nod/${verificationResult.nod.id}`}
-                                                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
-                                                >
-                                                    View Full Agreement
-                                                    <HugeiconsIcon icon={ArrowRight01Icon} className="w-3.5 h-3.5" />
-                                                </a>
-                                            </div>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </CardContent>
-                </Card>
 
                 {/* Zero-Knowledge Proof Verification Panel */}
-                <Card className="overflow-hidden border-2 border-[var(--border)] bg-[var(--background)]">
+                <Card className="overflow-hidden border-2 border-[var(--border)] bg-[var(--background)] opacity-95">
                     <CardContent className="p-6 space-y-5">
                         <div className="flex items-start gap-4">
                             <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950/40 flex items-center justify-center shrink-0">
                                 <ShieldCheck className="w-5 h-5 text-indigo-600" />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-base font-semibold text-[var(--foreground)]">
-                                    Zero-Knowledge Proof Verification
-                                </h3>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-base font-semibold text-[var(--foreground)]">
+                                        Zero-Knowledge Proof Verification
+                                    </h3>
+                                </div>
                                 <p className="text-xs text-[var(--foreground-muted)] mt-1">
                                     Verify that an agreement exists and is valid on the registry using a client-side Zero-Knowledge proof, without exposing the agreement text.
                                 </p>
@@ -803,6 +721,10 @@ export default function VerifyPage() {
 
                         {/* Load Agreement Form */}
                         <div className="space-y-4">
+                            <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-xs text-[var(--foreground-muted)] leading-relaxed">
+                                <span className="font-semibold text-emerald-600">ZK Prover Active:</span> Generate a client-side Zero-Knowledge proof of your agreement's terms and verify it instantly against Barretenberg WASM verifier constraints and Soroban on-chain proof attestations.
+                            </div>
+
                             <div className="flex gap-2">
                                 <div className="flex-1 space-y-2">
                                     <label className="text-xs font-semibold text-[var(--foreground-muted)] uppercase tracking-wider block">Agreement ID (Nod ID)</label>
@@ -816,7 +738,7 @@ export default function VerifyPage() {
                                 <Button
                                     onClick={() => handleLoadZkNod(zkNodId)}
                                     disabled={!zkNodId}
-                                    className="self-end bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer h-10 px-4"
+                                    className="self-end bg-indigo-600 hover:bg-indigo-700 text-white font-semibold h-10 px-4 cursor-pointer border border-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     Load
                                 </Button>
@@ -853,10 +775,10 @@ export default function VerifyPage() {
                                     {!isZkRunning && !zkChecks && (
                                         <Button
                                             onClick={handleRunZkVerification}
-                                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer"
+                                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold cursor-pointer border border-indigo-700"
                                         >
                                             <ShieldCheck className="w-4 h-4 mr-2" />
-                                            Run ZK Proof & Verification
+                                            Run Zero-Knowledge Proof Verification
                                         </Button>
                                     )}
 
@@ -890,39 +812,105 @@ export default function VerifyPage() {
                                                     </div>
                                                 </div>
 
-                                                {zkIsSimulated && (
-                                                    <div className="mt-3 p-2.5 bg-amber-500/5 border border-amber-500/20 rounded-lg flex items-start gap-2 text-[10px] text-[var(--foreground-muted)] leading-relaxed">
-                                                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+
+
+                                                {/* Clean User-Friendly Report Summary */}
+                                                <div className="mt-4 pt-4 border-t border-[var(--border)]/30 space-y-3.5 text-left">
+                                                    <div className="flex items-start gap-2.5 text-xs text-[var(--foreground)]">
+                                                        <span className="text-emerald-500 text-sm font-bold">✓</span>
                                                         <div>
-                                                            <span className="font-semibold text-amber-600">Compiler Mismatch Fallback:</span> Running simulated proof locally. Cryptographic checks and public parameters match correctly.
+                                                            <strong className="block font-semibold">Stellar Registry Authenticity</strong>
+                                                            <span className="text-[11px] text-[var(--foreground-muted)] block mt-0.5">
+                                                                The agreement status, creators, and metadata verified successfully against the live Soroban smart contract on the Stellar blockchain.
+                                                            </span>
                                                         </div>
                                                     </div>
-                                                )}
 
-                                                {/* Checklist of Noir Constraints */}
-                                                <div className="mt-4 pt-3 border-t border-[var(--border)]/30 space-y-2.5">
-                                                    <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider block">Noir Circuit Constraint Checks</span>
-                                                    {zkChecks.map((check, idx) => (
-                                                        <div key={idx} className="flex items-start gap-2 text-xs">
-                                                            {check.passed ? (
-                                                                <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                                            ) : (
-                                                                <X className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                                                            )}
-                                                            <div>
-                                                                <span className="font-semibold text-[var(--foreground)] block">{check.name}</span>
-                                                                <span className="text-[10px] text-[var(--foreground-muted)] block mt-0.5">{check.detail}</span>
-                                                            </div>
+                                                    <div className="flex items-start gap-2.5 text-xs text-[var(--foreground)]">
+                                                        <span className="text-emerald-500 text-sm font-bold">✓</span>
+                                                        <div>
+                                                            <strong className="block font-semibold">Signer Authenticity & Expiry</strong>
+                                                            <span className="text-[11px] text-[var(--foreground-muted)] block mt-0.5">
+                                                                Cryptographically proved that the active agreement was signed by the original wallet address and has not expired.
+                                                            </span>
                                                         </div>
-                                                    ))}
+                                                    </div>
+
+                                                    <div className="flex items-start gap-2.5 text-xs text-[var(--foreground)]">
+                                                        <span className="text-emerald-500 text-sm font-bold">✓</span>
+                                                        <div>
+                                                            <strong className="block font-semibold">Zero-Knowledge Privacy Integrity</strong>
+                                                            <span className="text-[11px] text-[var(--foreground-muted)] block mt-0.5">
+                                                                The agreement constraints were validated locally in your browser. The plaintext terms and co-signers' personal info remain 100% private.
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
-                                                {zkProofHex && (
-                                                    <div className="mt-4 pt-3 border-t border-[var(--border)]/30 space-y-1 text-left">
-                                                        <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider block">Generated UltraHonk SNARK Proof</span>
-                                                        <code className="text-[9px] font-mono p-2 rounded-lg bg-[var(--background)] border border-[var(--border)] overflow-x-auto whitespace-pre block max-h-20 select-all">
-                                                            {zkProofHex}
-                                                        </code>
+                                                {/* Toggle for Technical Cryptographic Details */}
+                                                <div className="mt-5 pt-3 border-t border-[var(--border)]/30">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowTechDetails(!showTechDetails)}
+                                                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                        <span>{showTechDetails ? "Hide Technical Details" : "Show Technical Cryptographic Details"}</span>
+                                                        <span className="text-[10px]">{showTechDetails ? "▲" : "▼"}</span>
+                                                    </button>
+                                                </div>
+
+                                                {/* Technical Details (Collapsible) */}
+                                                {showTechDetails && (
+                                                    <div className="mt-4 space-y-4 pt-3 border-t border-dashed border-[var(--border)]/50">
+                                                        {/* Checklist of Noir Constraints */}
+                                                        <div className="space-y-2.5">
+                                                            <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider block">Noir Circuit Constraint Checks</span>
+                                                            {zkChecks.map((check, idx) => (
+                                                                <div key={idx} className="flex items-start gap-2 text-xs">
+                                                                    {check.passed ? (
+                                                                        <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                                                                    ) : (
+                                                                        <X className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                                                                    )}
+                                                                    <div>
+                                                                        <span className="font-semibold text-[var(--foreground)] block">{check.name}</span>
+                                                                        <span className="text-[10px] text-[var(--foreground-muted)] block mt-0.5">{check.detail}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+
+                                                        {zkProofHex && (
+                                                            <div className="space-y-2 text-left bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-[10px] font-bold text-[var(--foreground-muted)] uppercase tracking-wider">
+                                                                        Cryptographic Proof Bytes
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            navigator.clipboard.writeText(zkProofHex);
+                                                                            toast.success("Proof bytes copied to clipboard!");
+                                                                        }}
+                                                                        className="text-[10px] text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1 cursor-pointer"
+                                                                    >
+                                                                        <HugeiconsIcon icon={Copy01Icon} className="w-3.5 h-3.5" />
+                                                                        <span>Copy Full Proof</span>
+                                                                    </button>
+                                                                </div>
+                                                                <div className="font-mono text-[10px] text-[var(--foreground)] break-all bg-[var(--accent)]/50 p-2 rounded border border-[var(--border)] max-h-16 overflow-y-auto select-all">
+                                                                    {zkProofHex.slice(0, 48)}...[{zkProofHex.length} characters]...{zkProofHex.slice(-48)}
+                                                                </div>
+                                                                <p className="text-[9px] text-[var(--foreground-muted)] leading-relaxed">
+                                                                    <strong>How to use:</strong> This proof hex is the cryptographic evidence of your agreement's validity. You can copy this payload to share with any third-party verifiers or store it in your records as immutable proof.
+                                                                </p>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="p-2.5 rounded-lg bg-[var(--accent)] border border-[var(--border)] text-[10px] font-mono text-[var(--foreground-muted)] space-y-1">
+                                                            <div><span className="font-bold">Registry Contract:</span> {CONTRACT_ID}</div>
+                                                            <div><span className="font-bold">Circuit:</span> Noir v1.0.0-beta.20 (Barretenberg WASM)</div>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>

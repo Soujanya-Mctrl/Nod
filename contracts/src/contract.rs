@@ -26,12 +26,36 @@ pub struct Agreement {
     pub completed_parties: Vec<Address>,
     pub arbitrator: Option<Address>,
     pub delivered_at: u64,
+    pub commitment: BytesN<32>,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Agreement(BytesN<32>),
+    ProofHash(BytesN<32>),
+    UserAgreements(Address),
+}
+
+fn add_user_agreement(env: &Env, user: &Address, agreement_id: &BytesN<32>) {
+    let key = DataKey::UserAgreements(user.clone());
+    let mut agreements: Vec<BytesN<32>> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    
+    let mut exists = false;
+    for id in agreements.iter() {
+        if id == *agreement_id {
+            exists = true;
+            break;
+        }
+    }
+    if !exists {
+        agreements.push_back(agreement_id.clone());
+        env.storage().persistent().set(&key, &agreements);
+    }
 }
 
 #[contract]
@@ -52,6 +76,7 @@ impl NodContract {
         token_address: Option<Address>,
         caution_amount: i128,
         arbitrator: Option<Address>,
+        commitment: BytesN<32>,
     ) -> Agreement {
         let ledger_timestamp = env.ledger().timestamp();
         if expires_at > 0 && ledger_timestamp > expires_at {
@@ -95,9 +120,15 @@ impl NodContract {
             completed_parties: Vec::new(&env),
             arbitrator,
             delivered_at: 0,
+            commitment,
         };
 
         env.storage().persistent().set(&key, &agreement);
+
+        add_user_agreement(&env, &initiator, &agreement_id);
+        for cp in counterparties.iter() {
+            add_user_agreement(&env, &cp, &agreement_id);
+        }
 
         // Emit AgreementSealed event
         env.events().publish(
@@ -325,11 +356,13 @@ impl NodContract {
         // Check if there is an existing agreement in Awaiting state
         let mut caution_amount = 0;
         let mut token_address = None;
+        let mut commitment = BytesN::from_array(&env, &[0; 32]);
         if env.storage().persistent().has(&key) {
             let existing: Agreement = env.storage().persistent().get(&key).unwrap();
             if existing.status == NodStatus::Awaiting {
                 caution_amount = existing.caution_amount;
                 token_address = existing.token_address.clone();
+                commitment = existing.commitment.clone();
             }
         }
 
@@ -357,6 +390,7 @@ impl NodContract {
             completed_parties: Vec::new(&env),
             arbitrator: None,
             delivered_at: 0,
+            commitment,
         };
 
         env.storage().persistent().set(&key, &agreement);
@@ -515,5 +549,60 @@ impl NodContract {
     pub fn get_agreement(env: Env, agreement_id: BytesN<32>) -> Option<Agreement> {
         let key = DataKey::Agreement(agreement_id);
         env.storage().persistent().get(&key)
+    }
+
+    /// Stores the cryptographic proof receipt hash for an agreement.
+    /// Only the agreement initiator or counterparties can store the hash.
+    pub fn store_proof_hash(
+        env: Env,
+        agreement_id: BytesN<32>,
+        proof_hash: BytesN<32>,
+        prover: Address,
+    ) {
+        prover.require_auth();
+
+        // 1. Verify that the agreement exists
+        let key = DataKey::Agreement(agreement_id.clone());
+        if !env.storage().persistent().has(&key) {
+            panic!("Agreement does not exist");
+        }
+
+        let agreement: Agreement = env.storage().persistent().get(&key).unwrap();
+
+        // 2. Verify that the prover is a participant in this agreement
+        let mut is_participant = prover == agreement.initiator;
+        if !is_participant {
+            for cp in agreement.counterparties.iter() {
+                if cp == prover {
+                    is_participant = true;
+                    break;
+                }
+            }
+        }
+        if !is_participant {
+            panic!("Prover is not a participant in this agreement");
+        }
+
+        // 3. Store the proof hash
+        let hash_key = DataKey::ProofHash(agreement_id.clone());
+        env.storage().persistent().set(&hash_key, &proof_hash);
+
+        // 4. Emit event
+        env.events().publish(
+            (symbol_short!("pr_hash"), agreement_id),
+            (proof_hash, prover),
+        );
+    }
+
+    /// Retrieves the stored proof receipt hash for an agreement.
+    pub fn get_proof_hash(env: Env, agreement_id: BytesN<32>) -> Option<BytesN<32>> {
+        let hash_key = DataKey::ProofHash(agreement_id);
+        env.storage().persistent().get(&hash_key)
+    }
+
+    /// Retrieves all agreement IDs associated with a user address.
+    pub fn get_user_agreements(env: Env, user: Address) -> Vec<BytesN<32>> {
+        let key = DataKey::UserAgreements(user);
+        env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(&env))
     }
 }

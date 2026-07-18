@@ -1,4 +1,4 @@
-import { generateProof, verifyProof, bytesToHex } from "./noir-zk";
+import { generateProof, verifyProof, bytesToHex, hexToBytes } from "./noir-zk";
 import { StrKey } from "@stellar/stellar-sdk";
 
 export interface ZKPublicInputs {
@@ -48,6 +48,7 @@ export async function generateZKProof(params: {
     expiresAt: number;
     status: string;
     contentHash: string;
+    nonceHex?: string;
 }): Promise<ZKProof> {
     const { text, initiator, counterparty, timestamp, expiresAt, status } = params;
 
@@ -65,8 +66,14 @@ export async function generateZKProof(params: {
     const view = new DataView(createdAtBytes.buffer);
     view.setBigUint64(0, BigInt(timestamp), false);
 
-    // 4. Generate random 32-byte nonce (private input)
-    const nonce = crypto.getRandomValues(new Uint8Array(32));
+    // 4. Get or generate random 32-byte nonce (private input)
+    let nonce: Uint8Array;
+    if (params.nonceHex) {
+        nonce = hexToBytes(params.nonceHex);
+    } else {
+        console.warn("[ZK-Wrapper] No nonceHex provided, generating a new random one.");
+        nonce = crypto.getRandomValues(new Uint8Array(32));
+    }
 
     // 5. Compute commitment = SHA-256(agreement_text_hash || initiator_bytes || created_at_bytes || nonce)
     const preimage = new Uint8Array(104);
@@ -78,7 +85,7 @@ export async function generateZKProof(params: {
     const commitmentBytes = await computeSha256(preimage);
     const commitmentHex = bytesToHex(commitmentBytes);
 
-    const isNodded = status === "nodded" || status === "completed" || status === "delivered";
+    const isNodded = status === "awaiting" || status === "nodded" || status === "completed" || status === "delivered" || status === "disputed";
 
     // 6. Generate the actual cryptographic proof
     const realProof = await generateProof({
@@ -135,12 +142,15 @@ export async function verifyZKProof(proof: ZKProof): Promise<ZKVerificationResul
     const { publicInputs, realProof } = proof;
 
     // Check 1: Commitment format
-    const commitmentValid = /^[0-9a-f]{64}$/.test(publicInputs.commitment);
+    const cleanCommitment = publicInputs.commitment.startsWith("0x")
+        ? publicInputs.commitment.slice(2)
+        : publicInputs.commitment;
+    const commitmentValid = /^[0-9a-fA-F]{64}$/.test(cleanCommitment);
     checks.push({
         name: "Commitment Hash Format",
         passed: commitmentValid,
         detail: commitmentValid
-            ? `Valid 32-byte hex commitment: 0x${publicInputs.commitment.slice(0, 12)}...`
+            ? `Valid 32-byte hex commitment: 0x${cleanCommitment.slice(0, 12)}...`
             : "Invalid commitment format — expected 32-byte hex",
     });
 
@@ -172,8 +182,8 @@ export async function verifyZKProof(proof: ZKProof): Promise<ZKVerificationResul
         name: "Contract Status Constraint",
         passed: publicInputs.statusNodded,
         detail: publicInputs.statusNodded
-            ? "Agreement status is Nodded/Active"
-            : "Agreement is not in Nodded status (cannot verify)",
+            ? "Agreement status is active on-chain (Awaiting/Nodded/Completed/Delivered/Disputed)"
+            : "Agreement is not in an active status (cannot verify)",
     });
 
     // Check 5: Cryptographic proof verification using Barretenberg WASM

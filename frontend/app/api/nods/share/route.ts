@@ -15,7 +15,7 @@ const sharesStore = globalShares.sharesStore;
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { nodId, type, zkProof, publicInputs, allowedAddress, encryptedPayload, iv, key } = body;
+        const { nodId, type, zkProof, publicInputs, allowedAddress, encryptedPayload, iv, key, sharerAddress } = body;
 
         if (!nodId || !type) {
             return NextResponse.json({ error: "Missing required fields: nodId, type" }, { status: 400 });
@@ -38,6 +38,7 @@ export async function POST(req: Request) {
                 nodId,
                 zkProof,
                 publicInputs,
+                sharerAddress,
                 createdAt: timestamp
             });
         } else {
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
                 encryptedPayload,
                 iv,
                 key, // Decryption key (kept private, returned only on signature challenge)
+                sharerAddress,
                 createdAt: timestamp
             });
         }
@@ -67,6 +69,46 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const shareId = searchParams.get("shareId");
+    const address = searchParams.get("address");
+    const sharerAddress = searchParams.get("sharerAddress");
+
+    if (address) {
+        const userShares = [];
+        for (const [_, record] of sharesStore.entries()) {
+            if (record.allowedAddress && record.allowedAddress.toLowerCase() === address.toLowerCase()) {
+                userShares.push({
+                    shareId: record.shareId,
+                    type: record.type,
+                    nodId: record.nodId,
+                    allowedAddress: record.allowedAddress,
+                    encryptedPayload: record.encryptedPayload,
+                    iv: record.iv,
+                    sharerAddress: record.sharerAddress,
+                    createdAt: record.createdAt
+                });
+            }
+        }
+        return NextResponse.json(userShares);
+    }
+
+    if (sharerAddress) {
+        const userShares = [];
+        for (const [_, record] of sharesStore.entries()) {
+            if (record.sharerAddress && record.sharerAddress.toLowerCase() === sharerAddress.toLowerCase()) {
+                userShares.push({
+                    shareId: record.shareId,
+                    type: record.type,
+                    nodId: record.nodId,
+                    allowedAddress: record.allowedAddress,
+                    encryptedPayload: record.encryptedPayload,
+                    iv: record.iv,
+                    sharerAddress: record.sharerAddress,
+                    createdAt: record.createdAt
+                });
+            }
+        }
+        return NextResponse.json(userShares);
+    }
 
     if (!shareId) {
         return NextResponse.json({ error: "Missing shareId parameter" }, { status: 400 });
@@ -85,6 +127,7 @@ export async function GET(req: Request) {
             nodId: record.nodId,
             zkProof: record.zkProof,
             publicInputs: record.publicInputs,
+            sharerAddress: record.sharerAddress,
             createdAt: record.createdAt
         });
     } else {
@@ -95,7 +138,14 @@ export async function GET(req: Request) {
             allowedAddress: record.allowedAddress,
             encryptedPayload: record.encryptedPayload,
             iv: record.iv,
+            sharerAddress: record.sharerAddress,
             createdAt: record.createdAt
         });
     }
+}
+
+export async function DELETE() {
+    sharesStore.clear();
+    console.log("[Share API] All share records cleared");
+    return NextResponse.json({ success: true, message: "All share records cleared" });
 }

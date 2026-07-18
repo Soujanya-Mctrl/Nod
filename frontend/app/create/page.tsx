@@ -24,6 +24,7 @@ import { buildAgreementEncryptionMessage, encryptAgreementForIPFS } from "@/lib/
 import { useNods, type Nod } from "@/lib/store";
 import { generateHash, truncateHash } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { StrKey } from "@stellar/stellar-sdk";
 
 type TemplateType = "freelancer" | "friends" | "roommates" | "vendor";
 
@@ -88,7 +89,7 @@ export default function CreateNodPage() {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
-    const [hash, setHash] = useState("");
+    const [createdNodId, setCreatedNodId] = useState("");
     const [arbitrator, setArbitrator] = useState("");
 
     // Set defaults when template changes
@@ -189,6 +190,30 @@ export default function CreateNodPage() {
                 Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
             ).join('');
 
+            // Calculate Zero-Knowledge proof inputs and commitment
+            const textBytes = new TextEncoder().encode(agreement.trim());
+            const textHashBuffer = await crypto.subtle.digest("SHA-256", textBytes.buffer as ArrayBuffer);
+            const textHashBytes = new Uint8Array(textHashBuffer);
+
+            const initiatorBytes = StrKey.decodeEd25519PublicKey(address);
+
+            const createdAtBytes = new Uint8Array(8);
+            const view = new DataView(createdAtBytes.buffer);
+            view.setBigUint64(0, BigInt(createdAt), false);
+
+            const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
+            const nonceHex = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+            const preimage = new Uint8Array(104);
+            preimage.set(textHashBytes, 0);
+            preimage.set(initiatorBytes, 32);
+            preimage.set(createdAtBytes, 64);
+            preimage.set(nonceBytes, 72);
+
+            const commitmentBuffer = await crypto.subtle.digest("SHA-256", preimage);
+            const commitmentBytes = new Uint8Array(commitmentBuffer);
+            const commitmentHex = Array.from(commitmentBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
             // 1. Encrypt metadata before uploading to IPFS
             const agreementData = {
                 text: agreement.trim(),
@@ -198,7 +223,9 @@ export default function CreateNodPage() {
                 template: activeTemplate,
                 cautionAmount: cautionAmount,
                 expiresAt,
-                arbitrator: resolvedArbitrator || null
+                arbitrator: resolvedArbitrator || null,
+                nonceHex,
+                commitmentHex
             };
 
             const encryptionMessage = buildAgreementEncryptionMessage({
@@ -229,6 +256,7 @@ export default function CreateNodPage() {
                 createdAt,
                 expiresAt,
                 agreementIdHex,
+                zkCommitmentHex: commitmentHex,
                 tokenAddress: cautionAmount > 0 ? nativeTokenAddress : undefined,
                 cautionAmount: cautionAmount > 0 ? Math.floor(cautionAmount * 10000000) : 0, // 7 decimals
                 arbitrator: resolvedArbitrator || undefined
@@ -257,6 +285,8 @@ export default function CreateNodPage() {
                     sig1: signedXdr,
                     expiresAt,
                     agreementIdHex,
+                    nonceHex,
+                    commitmentHex,
                     tokenAddress: cautionAmount > 0 ? nativeTokenAddress : undefined,
                     cautionAmount: cautionAmount > 0 ? Math.floor(cautionAmount * 10000000) : 0,
                     arbitrator: resolvedArbitrator || undefined
@@ -285,12 +315,14 @@ export default function CreateNodPage() {
                 completedParties: [],
                 arbitrator: resolvedArbitrator || undefined,
                 agreementIdHex,
+                nonceHex,
+                commitmentHex,
                 ipfsEncrypted: true,
                 encryptionMessage
             };
             addNod(newNod);
 
-            setHash(finalHash);
+            setCreatedNodId(nodId);
             setShowSuccess(true);
             setIsSubmitting(false);
 
@@ -321,8 +353,8 @@ export default function CreateNodPage() {
                         Your agreement terms have been uploaded to IPFS and signed. Your co-signers will see it on their dashboard when they connect their Freighter wallet.
                     </p>
                     <div className="p-4 bg-[var(--accent)] rounded-lg mt-6 border border-[var(--border)]">
-                        <p className="text-xs text-[var(--foreground-muted)] mb-1">Sealed Content Hash</p>
-                        <code className="text-sm font-mono text-[var(--foreground)] break-all">{hash}</code>
+                        <p className="text-xs text-[var(--foreground-muted)] mb-1">Agreement ID (Nod ID)</p>
+                        <code className="text-sm font-mono text-[var(--foreground)] break-all">{createdNodId}</code>
                     </div>
                 </motion.div>
             </div>

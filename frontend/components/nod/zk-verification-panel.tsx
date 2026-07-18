@@ -20,6 +20,8 @@ import {
     type ZKVerificationResult,
 } from "@/lib/zk-verifier";
 import { useToast } from "@/components/ui/toast";
+import { buildStoreProofHashTx, signTxWithFreighter, submitStellarTx } from "@/lib/stellar";
+import { useStellarWallet } from "@/components/providers/stellar-provider";
 
 interface ZKVerificationPanelProps {
     nod: Nod;
@@ -43,9 +45,38 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
     const [proof, setProof] = useState<ZKProof | null>(null);
     const [verificationResult, setVerificationResult] = useState<ZKVerificationResult | null>(null);
     const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+    const [isCommitting, setIsCommitting] = useState(false);
+    const [isOnChainCommitted, setIsOnChainCommitted] = useState(false);
+    const [onChainTxHash, setOnChainTxHash] = useState<string | null>(null);
+    const { address: userAddress } = useStellarWallet();
 
-    // ZK constraints require status_nodded = true, which maps to active/nodded, completed, or delivered statuses
-    const canGenerate = nod.status === "nodded" || nod.status === "completed" || nod.status === "delivered";
+    const handleCommitProof = async () => {
+        if (!proof || !userAddress) return;
+
+        setIsCommitting(true);
+        try {
+            const xdrString = await buildStoreProofHashTx({
+                prover: userAddress,
+                agreementIdHex: nod.id,
+                proofHashHex: proof.receiptHash,
+            });
+
+            const signedXdr = await signTxWithFreighter(xdrString);
+            const txHash = await submitStellarTx(signedXdr);
+            setOnChainTxHash(txHash);
+            setIsOnChainCommitted(true);
+            toast.success("Proof committed to blockchain successfully!");
+        } catch (error: any) {
+            console.error("Failed to commit proof on-chain:", error);
+            toast.error(error.message || "Failed to commit proof to the blockchain.");
+        } finally {
+            setIsCommitting(false);
+        }
+    };
+
+    const hasPlaintext = !!nod.text && nod.text.trim() !== "";
+    // ZK constraints require status_nodded = true, which maps to active on-chain statuses (awaiting, nodded, completed, delivered, disputed)
+    const canGenerate = (nod.status === "awaiting" || nod.status === "nodded" || nod.status === "completed" || nod.status === "delivered" || nod.status === "disputed") && hasPlaintext;
 
     const handleGenerateProof = async () => {
         setIsGenerating(true);
@@ -122,6 +153,8 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
         setProof(null);
         setVerificationResult(null);
         setShowTechnicalDetails(false);
+        setIsOnChainCommitted(false);
+        setOnChainTxHash(null);
     };
 
     return (
@@ -135,10 +168,15 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                         <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 text-violet-600" />
                     </div>
                     <div className="text-left">
-                        <span className="text-sm font-bold text-[var(--foreground)] block">
-                            Create Private Verification Receipt
-                        </span>
-                        <span className="text-[10px] text-violet-600 font-medium">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-[var(--foreground)]">
+                                Create Private Verification Receipt
+                            </span>
+                            <span className="text-[9px] bg-violet-500/10 text-violet-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                ZK Prover
+                            </span>
+                        </div>
+                        <span className="text-[10px] text-violet-600 font-medium block mt-0.5">
                             Prove agreement details without revealing them
                         </span>
                     </div>
@@ -178,7 +216,17 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
 
                                 {!proof ? (
                                     <div className="space-y-3">
-                                        {!canGenerate && (
+                                        {!hasPlaintext && (
+                                            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-[11px] text-[var(--foreground-muted)] leading-relaxed">
+                                                <HugeiconsIcon icon={Alert01Icon} className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <span className="font-semibold text-amber-600">Plaintext Agreement Required: </span>
+                                                    Generating a private verification receipt requires the original agreement text. Since you are not an authorized participant (or have not connected and decrypted the terms), you cannot generate a receipt. However, you can still verify any existing verification receipt below.
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {hasPlaintext && !canGenerate && (
                                             <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-[11px] text-[var(--foreground-muted)] leading-relaxed">
                                                 <HugeiconsIcon icon={Alert01Icon} className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                                                 <div>
@@ -190,24 +238,19 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                 </div>
                                             </div>
                                         )}
-
                                         <Button
                                             onClick={handleGenerateProof}
                                             disabled={isGenerating || !canGenerate}
-                                            className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold cursor-pointer"
+                                            className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold border border-violet-700"
                                         >
                                             {isGenerating ? (
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 justify-center">
                                                     <motion.div
                                                         animate={{ rotate: 360 }}
-                                                        transition={{
-                                                            duration: 1,
-                                                            repeat: Infinity,
-                                                            ease: "linear",
-                                                        }}
+                                                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                                                         className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                                                     />
-                                                    Creating secure cryptographic receipt...
+                                                    Generating cryptographic proof...
                                                 </div>
                                             ) : (
                                                 <>
@@ -215,10 +258,11 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                         icon={SecurityCheckIcon}
                                                         className="w-4 h-4 mr-2"
                                                     />
-                                                    Create Private Receipt
+                                                    Create Verification Receipt
                                                 </>
                                             )}
                                         </Button>
+                                        
                                         {isGenerating && (
                                             <motion.div
                                                 initial={{ opacity: 0, y: -4 }}
@@ -313,6 +357,51 @@ export function ZKVerificationPanel({ nod }: ZKVerificationPanelProps) {
                                                     </div>
                                                 </div>
                                             </div>
+                                            
+                                            {/* Commit Proof to Chain */}
+                                            {!isOnChainCommitted ? (
+                                                <Button
+                                                    onClick={handleCommitProof}
+                                                    disabled={isCommitting}
+                                                    className="w-full mt-3 bg-violet-600 hover:bg-violet-700 text-white font-semibold border border-violet-700"
+                                                >
+                                                    {isCommitting ? (
+                                                        <div className="flex items-center gap-2 justify-center">
+                                                            <motion.div
+                                                                animate={{ rotate: 360 }}
+                                                                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                                                className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                                                            />
+                                                            Committing proof to chain...
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <HugeiconsIcon icon={SecurityCheckIcon} className="w-4 h-4 mr-2" />
+                                                            {userAddress ? "Commit Proof to Blockchain" : "Connect Wallet to Commit"}
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            ) : (
+                                                <div className="mt-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs">
+                                                    <div className="flex items-center gap-2 text-emerald-600 font-bold">
+                                                        <HugeiconsIcon icon={CheckmarkCircle01Icon} className="w-4 h-4" />
+                                                        <span>Proof Anchored On-Chain</span>
+                                                    </div>
+                                                    {onChainTxHash && (
+                                                        <div className="mt-1.5 font-mono text-[10px] text-[var(--foreground-muted)] break-all">
+                                                            Tx Hash:{" "}
+                                                            <a
+                                                                href={`https://stellar.expert/explorer/testnet/tx/${onChainTxHash}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="underline hover:text-violet-600"
+                                                            >
+                                                                {onChainTxHash}
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )}

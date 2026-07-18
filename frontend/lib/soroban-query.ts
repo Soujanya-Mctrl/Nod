@@ -1,4 +1,4 @@
-import { rpc, xdr, nativeToScVal, Address, TransactionBuilder, Account, Networks, BASE_FEE, Operation } from "@stellar/stellar-sdk";
+import { rpc, xdr, nativeToScVal, scValToNative, Address, TransactionBuilder, Account, Networks, BASE_FEE, Operation } from "@stellar/stellar-sdk";
 import { CONTRACT_ID, STELLAR_TESTNET_RPC } from "./stellar";
 
 /**
@@ -17,6 +17,7 @@ export interface OnChainAgreement {
     completedParties: string[];
     arbitrator: string | null;
     deliveredAt: number;
+    commitment: string | null;
 }
 
 const STATUS_LABELS: Record<number, string> = {
@@ -204,6 +205,14 @@ function parseAgreementStruct(val: xdr.ScVal): OnChainAgreement | null {
 
         const statusNum = parseScStatus(fields["status"]);
 
+        let commitment: string | null = null;
+        if (fields["commitment"]) {
+            const nativeCommitment = scValToNative(fields["commitment"]);
+            if (Buffer.isBuffer(nativeCommitment) || nativeCommitment instanceof Uint8Array) {
+                commitment = Buffer.from(nativeCommitment).toString("hex");
+            }
+        }
+
         return {
             cid: parseScString(fields["cid"]),
             initiator: parseScAddress(fields["initiator"]),
@@ -217,6 +226,7 @@ function parseAgreementStruct(val: xdr.ScVal): OnChainAgreement | null {
             completedParties: fields["completed_parties"] ? parseScVecAddresses(fields["completed_parties"]) : [],
             arbitrator: fields["arbitrator"] ? parseScAddress(fields["arbitrator"]) : null,
             deliveredAt: fields["delivered_at"] ? parseScU64(fields["delivered_at"]) : 0,
+            commitment,
         };
     } catch (error) {
         console.error("Failed to parse agreement struct:", error);
@@ -256,3 +266,126 @@ export async function fetchIPFSContent(cid: string): Promise<Record<string, unkn
 
     return null;
 }
+
+/**
+ * Queries the Soroban contract for a stored proof hash.
+ */
+export async function queryProofHashOnChain(agreementIdHex: string): Promise<string | null> {
+    try {
+        const server = new rpc.Server(STELLAR_TESTNET_RPC);
+        const agreementBytes = hexToBytes(agreementIdHex);
+        const scValAgreementId = nativeToScVal(Buffer.from(agreementBytes));
+
+        // Dummy source account for simulation
+        const sourceAccount = new Account(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0"
+        );
+
+        const op = Operation.invokeContractFunction({
+            contract: CONTRACT_ID,
+            function: "get_proof_hash",
+            args: [scValAgreementId],
+        });
+
+        const tx = new TransactionBuilder(sourceAccount, {
+            fee: BASE_FEE,
+            networkPassphrase: Networks.TESTNET,
+        })
+            .addOperation(op)
+            .setTimeout(30)
+            .build();
+
+        const simulateResponse = await server.simulateTransaction(tx);
+
+        if ("error" in simulateResponse) {
+            console.error("Simulation error querying proof hash:", (simulateResponse as any).error);
+            return null;
+        }
+
+        const successResponse = simulateResponse as rpc.Api.SimulateTransactionSuccessResponse;
+        if (!successResponse.result) {
+            return null;
+        }
+
+        const resultXdr = successResponse.result.retval;
+        
+        if (!resultXdr || resultXdr.switch().name === "scvVoid") {
+            return null;
+        }
+
+        const nativeVal = scValToNative(resultXdr);
+        if (Buffer.isBuffer(nativeVal) || nativeVal instanceof Uint8Array) {
+            return Buffer.from(nativeVal).toString("hex");
+        }
+
+        return null;
+    } catch (error) {
+        console.error("Failed to query proof hash on-chain:", error);
+        return null;
+    }
+}
+
+/**
+ * Queries the Soroban contract for all agreement IDs associated with a user address.
+ */
+export async function queryUserAgreementsOnChain(userAddress: string): Promise<string[]> {
+    try {
+        const server = new rpc.Server(STELLAR_TESTNET_RPC);
+        const scValUser = new Address(userAddress).toScVal();
+
+        const sourceAccount = new Account(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0"
+        );
+
+        const op = Operation.invokeContractFunction({
+            contract: CONTRACT_ID,
+            function: "get_user_agreements",
+            args: [scValUser],
+        });
+
+        const tx = new TransactionBuilder(sourceAccount, {
+            fee: BASE_FEE,
+            networkPassphrase: Networks.TESTNET,
+        })
+            .addOperation(op)
+            .setTimeout(30)
+            .build();
+
+        const simulateResponse = await server.simulateTransaction(tx);
+
+        if ("error" in simulateResponse) {
+            console.error("Simulation error querying user agreements:", (simulateResponse as any).error);
+            return [];
+        }
+
+        const successResponse = simulateResponse as rpc.Api.SimulateTransactionSuccessResponse;
+        if (!successResponse.result) {
+            return [];
+        }
+
+        const resultXdr = successResponse.result.retval;
+        
+        if (!resultXdr || resultXdr.switch().name === "scvVoid") {
+            return [];
+        }
+
+        const nativeVal = scValToNative(resultXdr);
+        if (Array.isArray(nativeVal)) {
+            return nativeVal.map((buf: any) => {
+                if (Buffer.isBuffer(buf) || buf instanceof Uint8Array) {
+                    return Buffer.from(buf).toString("hex");
+                }
+                return "";
+            }).filter(Boolean);
+        }
+
+        return [];
+    } catch (error) {
+        console.error("Failed to query user agreements on-chain:", error);
+        return [];
+    }
+}
+
+
