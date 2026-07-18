@@ -2,42 +2,25 @@
 
 ![Nod Banner](https://img.shields.io/badge/NOD-Soroban%20Agreements-blueviolet?style=for-the-badge&logo=rust)
 ![Status](https://img.shields.io/badge/Status-Testnet%20Active-emerald?style=for-the-badge)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-nod--agreement.vercel.app-000000?style=for-the-badge&logo=vercel)](https://nod-agreement.vercel.app/)
 
 **NOD** is a premium decentralized platform that replaces informal "text-message" agreements with cryptographically sealed, independently verifiable digital handshakes. 
 
 By combining **Stellar/Soroban**, **IPFS**, and **Zero-Knowledge Proofs (ZK)**, Nod ensures that agreements are immutable, secure, and optionally private.
 
+🌐 **Live Demo**: [https://nod-agreement.vercel.app/](https://nod-agreement.vercel.app/)
+
 ---
 
-## 🟡 Level 2 - Yellow Belt Submission Checklist
+## 📸 Application Gallery
 
-- [x] **Public GitHub Repository**: Complete open-source codebase with commit history.
-- [x] **Minimum 2+ Meaningful Commits**: 10+ granular commits in Git history.
-- [x] **Contract Deployed on Testnet**: `CAM54I42XTBF7OX3SM3OXR6J4AERRQ4T4EEVYKPST2IPHZYT6DYR5ETH`
-- [x] **Transaction Hash of Contract Call**: [`96841b9d4d4eb44efbd0663dbbdf0647ec87b41cebf8c8375a060e2ce1c9e831`](https://stellar.expert/explorer/testnet/tx/96841b9d4d4eb44efbd0663dbbdf0647ec87b41cebf8c8375a060e2ce1c9e831)
-- [x] **Contract Called from Frontend**: Active read & write contract execution (`seal_agreement`, `accept_agreement`, `decline_agreement`, `complete_agreement`, `claim_expired`).
-- [x] **Transaction Status Visible**: Pending, success, and failure toast/modal state tracking.
-- [x] **Real-time Event Integration**: Background event poller (`scripts/stellar-event-listener.mjs`) & live notification activity stream.
-- [x] **Multi-Wallet Integration (`StellarWalletsKit`)**: Supports Freighter, Albedo, xBull, Lobstr, and Hana.
+| Dashboard & Agreement Overview | Multi-Wallet Connection Modal |
+| :---: | :---: |
+| ![NOD Application Interface](images/Screenshot%202026-07-18%20230715.png) | ![Multi-Wallet Modal](images/Screenshot%202026-07-18%20230728.png) |
 
-### 👛 Wallet Options Available
-```text
-+-------------------------------------------------------------+
-|                  Connect Stellar Wallet                     |
-|  Select your preferred wallet provider                      |
-+-------------------------------------------------------------+
-|  [F] Freighter Wallet  (Extension)           [Recommended]  |
-|  [A] Albedo Link       (Web Signer)                         |
-|  [X] xBull Wallet      (Extension & Web)                    |
-|  [L] LOBSTR Wallet     (Mobile & Web)                       |
-|  [H] Hana Wallet       (Extension)                          |
-+-------------------------------------------------------------+
-```
-
-### 🛡️ 3 Handled Error Types
-1. `WALLET_NOT_FOUND`: Catches missing browser wallet extensions and prompts user to install or switch to Albedo/Lobstr web wallet.
-2. `USER_REJECTED`: Detects when user declines transaction or connection signature in wallet popup.
-3. `INSUFFICIENT_BALANCE`: Traps `tx_bad_seq`, `op_underfunded`, or unfunded testnet accounts and instructs funding via Friendbot.
+| Verification & Audit Interface | Activity Feed & Event Sync |
+| :---: | :---: |
+| ![Agreement Verification & Audit](images/Screenshot%202026-07-18%20230740.png) | ![Activity Feed & Notifications](images/Screenshot%202026-07-18%20230759.png) |
 
 ---
 
