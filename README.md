@@ -141,3 +141,11 @@ Open `http://localhost:3000` to interact with the DApp.
 - **Frontend Integration**: Webpack and WASM bundling checked via `npm run build`.
 
 ---
+
+## 🔗 Deployed Contracts & Live Transactions
+
+- **Soroban Contract Address**: `CAM54I42XTBF7OX3SM3OXR6J4AERRQ4T4EEVYKPST2IPHZYT6DYR5ETH` (on Stellar Testnet)
+- **Live Agreement Sealing Transaction Hash**: [`c1aa1c2ee82c9c2825056a72f0c7e969316b009c0489cf89c96b29f10718bf4f`](https://stellar.expert/explorer/testnet/tx/c1aa1c2ee82c9c2825056a72f0c7e969316b009c0489cf89c96b29f10718bf4f)
+- **Live Agreement Acceptance Transaction Hash**: [`db57104732dcc7dcd06ab63aec6074c6486dcbc944ceb576f374e770bba6e71a`](https://stellar.expert/explorer/testnet/tx/db57104732dcc7dcd06ab63aec6074c6486dcbc944ceb576f374e770bba6e71a)
+
+---

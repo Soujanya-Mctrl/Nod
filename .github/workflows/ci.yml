@@ -1,0 +1,46 @@
+name: NOD CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  contract-tests:
+    name: Soroban Smart Contract Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Run Soroban Contract Tests
+        run: cargo test --manifest-path=contracts/Cargo.toml
+
+  frontend-build:
+    name: Frontend Build & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Next.js Application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CONTRACT_ADDRESS: "CAM54I42XTBF7OX3SM3OXR6J4AERRQ4T4EEVYKPST2IPHZYT6DYR5ETH"
