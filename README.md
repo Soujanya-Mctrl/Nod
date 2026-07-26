@@ -9,18 +9,31 @@
 By combining **Stellar/Soroban**, **IPFS**, and **Zero-Knowledge Proofs (ZK)**, Nod ensures that agreements are immutable, secure, and optionally private.
 
 🌐 **Live Demo**: [https://nod-agreement.vercel.app/](https://nod-agreement.vercel.app/)
+🎥 **Demo Video**: [Watch Walkthrough Video](images/Recording%202026-07-26%20205027.mp4)
+
+<video src="images/Recording%202026-07-26%20205027.mp4" width="100%" controls></video>
 
 ---
 
 ## 📸 Application Gallery
 
-| Dashboard & Agreement Overview | Multi-Wallet Connection Modal |
+| Dashboard & Agreement Overview | Create Nod & Template Selector |
 | :---: | :---: |
-| ![NOD Application Interface](images/Screenshot%202026-07-18%20230715.png) | ![Multi-Wallet Modal](images/Screenshot%202026-07-18%20230728.png) |
+| ![Dashboard & Agreement Overview](images/Screenshot%202026-07-18%20230715.png) | ![Create Nod Form](images/Screenshot%202026-07-18%20230728.png) |
 
-| Verification & Audit Interface | Activity Feed & Event Sync |
+| Verification & Audit Interface | Multi-Wallet Connection Modal |
 | :---: | :---: |
-| ![Agreement Verification & Audit](images/Screenshot%202026-07-18%20230740.png) | ![Activity Feed & Notifications](images/Screenshot%202026-07-18%20230759.png) |
+| ![Agreement Verification & Audit](images/Screenshot%202026-07-18%20230740.png) | ![Multi-Wallet Connection Modal](images/Screenshot%202026-07-18%20230759.png) |
+
+### 📱 Mobile Responsive Interface
+
+| Mobile Dashboard | Mobile Navigation Drawer |
+| :---: | :---: |
+| ![Mobile Dashboard](images/Screenshot%202026-07-26%20203705.png) | ![Mobile Navigation](images/Screenshot%202026-07-26%20203715.png) |
+
+| Mobile Create Nod Page | Mobile Verify & Audit Page |
+| :---: | :---: |
+| ![Mobile Create Nod](images/Screenshot%202026-07-26%20203725.png) | ![Mobile Verify](images/Screenshot%202026-07-26%20203739.png) |
 
 ---
 
@@ -136,9 +149,23 @@ Open `http://localhost:3000` to interact with the DApp.
 - **Soroban Rust Tests**: `cargo test --manifest-path=contracts/Cargo.toml`
   - Validates full agreement lifecycle (seal, accept, complete, dispute, resolve).
   - Asserts caution money locking and asset distribution.
+  
+  ![Contract Tests Result](images/Screenshot%202026-07-26%20204045.png)
+
 - **Circuit Verification**: Compiled using Nargo in WSL:
   - `wsl /home/user_linux/.nargo/bin/nargo compile`
 - **Frontend Integration**: Webpack and WASM bundling checked via `npm run build`.
+
+---
+
+## 🔄 CI/CD Pipeline & Build Verification
+
+To guarantee code quality and deployment safety, every push and pull request runs a multi-job verification workflow in GitHub Actions:
+
+![CI/CD Pipeline](images/Screenshot%202026-07-26%20203917.png)
+
+* **Soroban Smart Contract Tests**: Compiles the contract and runs the full Rust-based unit test suite.
+* **Frontend Build & Type Check**: Validates the TypeScript compilation and builds the Next.js production bundles.
 
 ---
 
