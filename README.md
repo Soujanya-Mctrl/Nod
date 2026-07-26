@@ -9,9 +9,10 @@
 By combining **Stellar/Soroban**, **IPFS**, and **Zero-Knowledge Proofs (ZK)**, Nod ensures that agreements are immutable, secure, and optionally private.
 
 🌐 **Live Demo**: [https://nod-agreement.vercel.app/](https://nod-agreement.vercel.app/)
-🎥 **Demo Video**: [Watch Walkthrough Video](images/Recording%202026-07-26%20205027.mp4)
 
-<video src="images/Recording%202026-07-26%20205027.mp4" width="100%" controls></video>
+🎥 **Demo Video**: Click the preview image below to watch the walkthrough demonstration.
+
+[![Watch Nod Walkthrough Demo](images/Screenshot%202026-07-18%20230715.png)](images/Recording%202026-07-26%20205027.mp4)
 
 ---
 
