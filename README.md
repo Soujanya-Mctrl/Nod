@@ -10,9 +10,9 @@ By combining **Stellar/Soroban**, **IPFS**, and **Zero-Knowledge Proofs (ZK)**, 
 
 🌐 **Live Demo**: [https://nod-agreement.vercel.app/](https://nod-agreement.vercel.app/)
 
-🎥 **Demo Video**: Click the preview image below to watch the walkthrough demonstration.
+🎥 **Demo Video**: (Walkthrough Demonstration)
 
-[![Watch Nod Walkthrough Demo](images/Screenshot%202026-07-18%20230715.png)](images/Recording%202026-07-26%20205027.mp4)
+![Nod Walkthrough Demo](images/Recording%202026-07-26%20205027.gif)
 
 ---
 
